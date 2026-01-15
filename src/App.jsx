@@ -1,206 +1,232 @@
-import { useEffect, useState } from 'react';
-import MainScene from './components/Scene/MainScene';
-import HUD from './components/UI/HUD';
-import Sidebar from './components/UI/Sidebar';
-import useStore from './store/useStore';
+import { useEffect, useRef, useState } from 'react';
+import Phaser from 'phaser';
+import { GAME_CONFIG } from './config/gameConfig';
+import { MainScene } from './scenes/MainScene';
+import Sidebar from './ui/Sidebar';
+import HUD from './ui/HUD';
 import './App.css';
 
 function App() {
-  const toggleSidebar = useStore((state) => state.toggleSidebar);
-  const toggleEditMode = useStore((state) => state.toggleEditMode);
-  const undo = useStore((state) => state.undo);
-  const redo = useStore((state) => state.redo);
-  const deleteObject = useStore((state) => state.deleteObject);
-  const selectedObject = useStore((state) => state.selectedObject);
-  const duplicateObject = useStore((state) => state.duplicateObject);
-  const settings = useStore((state) => state.settings);
-  const sidebarOpen = useStore((state) => state.sidebarOpen);
+  const gameRef = useRef(null);
+  const phaserGameRef = useRef(null);
+  const [gameReady, setGameReady] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [selectedObject, setSelectedObject] = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [playerName, setPlayerName] = useState('Player');
+  const [showWelcome, setShowWelcome] = useState(true);
 
-  const [showTutorial, setShowTutorial] = useState(true);
-
-  // Keyboard shortcuts
   useEffect(() => {
-    const handleKeyDown = (e) => {
-      // Toggle sidebar with Tab
-      if (e.key === 'Tab') {
-        e.preventDefault();
-        toggleSidebar();
-      }
+    if (phaserGameRef.current) return;
 
-      // Toggle edit mode with E
-      if (e.key === 'e' || e.key === 'E') {
-        if (!sidebarOpen && document.activeElement === document.body) {
-          toggleEditMode();
-        }
-      }
-
-      // Undo with Ctrl+Z
-      if (e.ctrlKey && e.key === 'z') {
-        e.preventDefault();
-        undo();
-      }
-
-      // Redo with Ctrl+Y
-      if (e.ctrlKey && e.key === 'y') {
-        e.preventDefault();
-        redo();
-      }
-
-      // Delete selected object with Delete
-      if (e.key === 'Delete' && selectedObject) {
-        e.preventDefault();
-        deleteObject(selectedObject);
-      }
-
-      // Duplicate with Ctrl+D
-      if (e.ctrlKey && e.key === 'd' && selectedObject) {
-        e.preventDefault();
-        duplicateObject(selectedObject);
-      }
-
-      // Screenshot with F12
-      if (e.key === 'F12') {
-        e.preventDefault();
-        takeScreenshot();
-      }
-
-      // Hide tutorial with Escape
-      if (e.key === 'Escape' && showTutorial) {
-        setShowTutorial(false);
-      }
+    // Configuração do jogo com a cena
+    const config = {
+      ...GAME_CONFIG,
+      scene: [MainScene],
     };
 
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [
-    toggleSidebar,
-    toggleEditMode,
-    undo,
-    redo,
-    deleteObject,
-    duplicateObject,
-    selectedObject,
-    sidebarOpen,
-    showTutorial,
-  ]);
+    // Criar jogo Phaser
+    const game = new Phaser.Game(config);
+    phaserGameRef.current = game;
 
-  // Auto-save every 30 seconds
-  useEffect(() => {
-    const timer = setInterval(() => {
-      // Save to localStorage is handled by zustand persist middleware
-      console.log('Auto-saved');
-    }, 30000);
+    // Aguardar cena estar pronta
+    game.scene.scenes[0].events.on('scene-ready', () => {
+      setGameReady(true);
+    });
 
-    return () => clearInterval(timer);
+    // Escutar eventos da cena
+    game.scene.scenes[0].events.on('edit-mode-changed', (mode) => {
+      setEditMode(mode);
+    });
+
+    game.scene.scenes[0].events.on('object-selected', (object) => {
+      setSelectedObject(object);
+    });
+
+    return () => {
+      game.destroy(true);
+      phaserGameRef.current = null;
+    };
   }, []);
 
-  // Apply dark mode class to body
-  useEffect(() => {
-    document.body.classList.toggle('dark-mode', settings.darkMode);
-  }, [settings.darkMode]);
+  const handleStartGame = (name) => {
+    setPlayerName(name || 'Player');
+    setShowWelcome(false);
 
-  // Screenshot function
-  const takeScreenshot = () => {
-    const canvas = document.querySelector('canvas');
-    if (canvas) {
-      canvas.toBlob((blob) => {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `virtual-office-${Date.now()}.png`;
-        a.click();
-      });
+    // Atualizar nome do jogador na cena
+    if (phaserGameRef.current) {
+      const scene = phaserGameRef.current.scene.scenes[0];
+      if (scene.player) {
+        scene.player.setName(name || 'Player');
+      }
     }
   };
 
-  // Tutorial overlay
-  const Tutorial = () => {
-    if (!showTutorial) return null;
+  const handleAddObject = (objectId) => {
+    if (!phaserGameRef.current) return;
 
-    return (
-      <div className="tutorial-overlay">
-        <div className="tutorial-content">
-          <h2>🏢 Welcome to Your Virtual Office!</h2>
-          <div className="tutorial-section">
-            <h3>Navigation Controls</h3>
-            <ul>
-              <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> - Move around</li>
-              <li><kbd>Mouse</kbd> - Look around (click to lock)</li>
-              <li><kbd>Shift</kbd> - Run</li>
-              <li><kbd>Space</kbd> - Jump</li>
-            </ul>
-          </div>
-          <div className="tutorial-section">
-            <h3>Editor Controls</h3>
-            <ul>
-              <li><kbd>Tab</kbd> - Open/Close menu</li>
-              <li><kbd>E</kbd> - Toggle edit mode</li>
-              <li><kbd>Click</kbd> - Select objects</li>
-              <li><kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Y</kbd> - Undo/Redo</li>
-              <li><kbd>Ctrl</kbd>+<kbd>D</kbd> - Duplicate object</li>
-              <li><kbd>Delete</kbd> - Remove object</li>
-              <li><kbd>F12</kbd> - Take screenshot</li>
-            </ul>
-          </div>
-          <div className="tutorial-section">
-            <h3>Getting Started</h3>
-            <p>1. Press <kbd>Tab</kbd> to open the menu</p>
-            <p>2. Browse the Objects tab to add furniture</p>
-            <p>3. Toggle Edit Mode to customize your space</p>
-            <p>4. Save your layout when you're done!</p>
-          </div>
-          <button className="tutorial-close" onClick={() => setShowTutorial(false)}>
-            Got it! Let's start
-          </button>
-        </div>
-      </div>
-    );
+    const scene = phaserGameRef.current.scene.scenes[0];
+    const playerPos = scene.player.getGridPosition();
+
+    // Adicionar objeto próximo ao jogador
+    scene.addObject(objectId, playerPos.x + 2, playerPos.y);
   };
 
-  // Loading screen
-  const [isLoading, setIsLoading] = useState(true);
+  const handleToggleEditMode = () => {
+    if (!phaserGameRef.current) return;
+    const scene = phaserGameRef.current.scene.scenes[0];
+    scene.toggleEditMode();
+  };
 
-  useEffect(() => {
-    // Simulate loading
-    const timer = setTimeout(() => {
-      setIsLoading(false);
-    }, 1000);
+  const handleLoadPreset = (preset) => {
+    if (!phaserGameRef.current) return;
+    const scene = phaserGameRef.current.scene.scenes[0];
+    scene.loadRoom({ objects: preset.objects });
+    setSidebarOpen(false);
+  };
 
-    return () => clearTimeout(timer);
-  }, []);
+  const handleSaveRoom = () => {
+    if (!phaserGameRef.current) return;
+    const scene = phaserGameRef.current.scene.scenes[0];
+    const roomData = scene.saveRoom();
 
-  if (isLoading) {
-    return (
-      <div className="loading-screen">
-        <div className="loading-content">
-          <div className="loading-spinner"></div>
-          <h2>Loading Virtual Office...</h2>
-          <p>Preparing your 3D workspace</p>
-        </div>
-      </div>
-    );
-  }
+    // Salvar no localStorage
+    localStorage.setItem('virtual-office-room', JSON.stringify(roomData));
+
+    // Download JSON
+    const dataStr = JSON.stringify(roomData, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `room-${Date.now()}.json`;
+    link.click();
+  };
+
+  const handleLoadRoom = () => {
+    const saved = localStorage.getItem('virtual-office-room');
+    if (saved) {
+      const roomData = JSON.parse(saved);
+      if (phaserGameRef.current) {
+        const scene = phaserGameRef.current.scene.scenes[0];
+        scene.loadRoom(roomData);
+      }
+    }
+  };
 
   return (
     <div className="app-container">
-      <MainScene />
-      <HUD />
-      <Sidebar />
-      <Tutorial />
+      {/* Welcome Screen */}
+      {showWelcome && (
+        <div className="welcome-screen">
+          <div className="welcome-card">
+            <h1>🏢 Escritório Virtual 2D</h1>
+            <p className="welcome-subtitle">Estilo Habbo Hotel • Isométrico • Retro</p>
 
-      {/* Quick action button */}
-      <button
-        className="fab"
-        onClick={toggleSidebar}
-        title="Open Menu (Tab)"
-      >
-        {sidebarOpen ? '✕' : '☰'}
-      </button>
+            <div className="welcome-features">
+              <div className="feature">
+                <span className="feature-icon">🎮</span>
+                <span>Click para mover</span>
+              </div>
+              <div className="feature">
+                <span className="feature-icon">🛠️</span>
+                <span>Editor de móveis</span>
+              </div>
+              <div className="feature">
+                <span className="feature-icon">🎨</span>
+                <span>Avatar customizável</span>
+              </div>
+              <div className="feature">
+                <span className="feature-icon">💾</span>
+                <span>Salve seu escritório</span>
+              </div>
+            </div>
 
-      {/* Auto-save indicator */}
-      <div className="auto-save-indicator">
-        💾 Auto-save enabled
-      </div>
+            <div className="name-input-group">
+              <input
+                type="text"
+                placeholder="Digite seu nome..."
+                defaultValue="Player"
+                maxLength={15}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleStartGame(e.target.value);
+                  }
+                }}
+                id="player-name-input"
+              />
+              <button
+                className="btn-primary"
+                onClick={() => {
+                  const input = document.getElementById('player-name-input');
+                  handleStartGame(input.value);
+                }}
+              >
+                Entrar
+              </button>
+            </div>
+
+            <div className="welcome-controls">
+              <h3>Controles:</h3>
+              <ul>
+                <li><kbd>Click</kbd> Mover avatar</li>
+                <li><kbd>E</kbd> Toggle modo edição</li>
+                <li><kbd>G</kbd> Mostrar grid</li>
+                <li><kbd>Tab</kbd> Abrir menu</li>
+                <li><kbd>Delete</kbd> Remover objeto selecionado</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Game Container */}
+      <div
+        id="game-container"
+        ref={gameRef}
+        className={showWelcome ? 'hidden' : ''}
+      />
+
+      {/* HUD */}
+      {gameReady && !showWelcome && (
+        <HUD
+          editMode={editMode}
+          onToggleEditMode={handleToggleEditMode}
+          onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+          selectedObject={selectedObject}
+          playerName={playerName}
+        />
+      )}
+
+      {/* Sidebar */}
+      {gameReady && !showWelcome && sidebarOpen && (
+        <Sidebar
+          onClose={() => setSidebarOpen(false)}
+          onAddObject={handleAddObject}
+          onLoadPreset={handleLoadPreset}
+          onSaveRoom={handleSaveRoom}
+          onLoadRoom={handleLoadRoom}
+          editMode={editMode}
+        />
+      )}
+
+      {/* FAB Button */}
+      {gameReady && !showWelcome && (
+        <button
+          className="fab"
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          title="Menu (Tab)"
+        >
+          {sidebarOpen ? '✕' : '☰'}
+        </button>
+      )}
+
+      {/* Status Indicator */}
+      {gameReady && !showWelcome && (
+        <div className="status-indicator">
+          {editMode ? '🛠️ Modo Edição' : '🚶 Modo Navegação'}
+        </div>
+      )}
     </div>
   );
 }

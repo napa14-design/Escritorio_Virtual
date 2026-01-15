@@ -5,12 +5,9 @@
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   overflow: hidden;
-  background: #1a1a1a;
+  background: #2c2c2c;
 }
 
 .app-container {
@@ -20,8 +17,17 @@ body {
   overflow: hidden;
 }
 
-/* Loading Screen */
-.loading-screen {
+#game-container {
+  width: 100%;
+  height: 100%;
+}
+
+#game-container.hidden {
+  display: none;
+}
+
+/* Welcome Screen */
+.welcome-screen {
   position: fixed;
   top: 0;
   left: 0;
@@ -32,76 +38,22 @@ body {
   align-items: center;
   justify-content: center;
   z-index: 10000;
-}
-
-.loading-content {
-  text-align: center;
-  color: white;
-}
-
-.loading-spinner {
-  width: 60px;
-  height: 60px;
-  border: 4px solid rgba(255, 255, 255, 0.2);
-  border-top-color: white;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-  margin: 0 auto 24px auto;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.loading-content h2 {
-  font-size: 28px;
-  margin-bottom: 12px;
-  font-weight: 700;
-}
-
-.loading-content p {
-  font-size: 16px;
-  opacity: 0.9;
-}
-
-/* Tutorial Overlay */
-.tutorial-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0.85);
-  backdrop-filter: blur(10px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 9999;
   animation: fadeIn 0.3s ease;
 }
 
 @keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
-.tutorial-content {
-  background: linear-gradient(135deg, rgba(102, 126, 234, 0.95) 0%, rgba(118, 75, 162, 0.95) 100%);
-  backdrop-filter: blur(20px);
+.welcome-card {
+  background: rgba(255, 255, 255, 0.95);
   border-radius: 24px;
-  padding: 40px;
-  max-width: 600px;
-  max-height: 80vh;
-  overflow-y: auto;
-  color: white;
+  padding: 48px 40px;
+  max-width: 500px;
+  width: 90%;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-  animation: slideUp 0.4s ease;
+  animation: slideUp 0.5s ease;
 }
 
 @keyframes slideUp {
@@ -115,130 +67,187 @@ body {
   }
 }
 
-.tutorial-content h2 {
+.welcome-card h1 {
   font-size: 32px;
-  margin-bottom: 24px;
-  font-weight: 800;
+  margin-bottom: 8px;
+  color: #667eea;
   text-align: center;
 }
 
-.tutorial-section {
-  margin-bottom: 28px;
+.welcome-subtitle {
+  text-align: center;
+  color: #666;
+  font-size: 14px;
+  margin-bottom: 32px;
 }
 
-.tutorial-section h3 {
-  font-size: 20px;
-  margin-bottom: 12px;
-  font-weight: 600;
-  opacity: 0.95;
+.welcome-features {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 32px;
 }
 
-.tutorial-section ul {
-  list-style: none;
-  padding: 0;
+.feature {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: rgba(102, 126, 234, 0.1);
+  border-radius: 12px;
+  font-size: 14px;
 }
 
-.tutorial-section li {
-  padding: 8px 0;
-  font-size: 15px;
-  opacity: 0.9;
+.feature-icon {
+  font-size: 24px;
 }
 
-.tutorial-section p {
-  padding: 6px 0;
-  font-size: 15px;
-  opacity: 0.9;
+.name-input-group {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 32px;
 }
 
-.tutorial-content kbd {
-  background: rgba(255, 255, 255, 0.2);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  border-radius: 4px;
-  padding: 4px 8px;
-  font-family: 'Courier New', monospace;
-  font-size: 13px;
-  font-weight: 600;
-  margin: 0 2px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+.name-input-group input {
+  flex: 1;
+  padding: 14px 16px;
+  border: 2px solid #ddd;
+  border-radius: 12px;
+  font-size: 16px;
+  outline: none;
+  transition: border-color 0.2s;
 }
 
-.tutorial-close {
-  width: 100%;
-  padding: 16px;
-  background: white;
-  color: #667eea;
+.name-input-group input:focus {
+  border-color: #667eea;
+}
+
+.btn-primary {
+  padding: 14px 32px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
   border: none;
   border-radius: 12px;
   font-size: 16px;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
-  margin-top: 12px;
-  transition: all 0.2s ease;
+  transition: transform 0.2s, box-shadow 0.2s;
 }
 
-.tutorial-close:hover {
+.btn-primary:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
 }
 
-.tutorial-close:active {
+.btn-primary:active {
   transform: translateY(0);
 }
 
-/* Floating Action Button */
+.welcome-controls {
+  background: rgba(0, 0, 0, 0.05);
+  padding: 20px;
+  border-radius: 12px;
+}
+
+.welcome-controls h3 {
+  margin-bottom: 12px;
+  color: #333;
+  font-size: 16px;
+}
+
+.welcome-controls ul {
+  list-style: none;
+}
+
+.welcome-controls li {
+  padding: 6px 0;
+  font-size: 14px;
+  color: #666;
+}
+
+.welcome-controls kbd {
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-family: monospace;
+  font-size: 12px;
+  margin-right: 8px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+/* FAB Button */
 .fab {
   position: fixed;
-  bottom: 100px;
+  bottom: 30px;
   right: 30px;
   width: 60px;
   height: 60px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%);
   color: white;
   border: none;
   font-size: 24px;
   font-weight: 700;
   cursor: pointer;
-  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.4);
+  box-shadow: 0 8px 24px rgba(238, 90, 111, 0.4);
   transition: all 0.3s ease;
-  z-index: 1500;
+  z-index: 999;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .fab:hover {
-  transform: scale(1.1) rotate(90deg);
-  box-shadow: 0 12px 32px rgba(102, 126, 234, 0.6);
+  transform: scale(1.1);
+  box-shadow: 0 12px 32px rgba(238, 90, 111, 0.6);
 }
 
 .fab:active {
   transform: scale(0.95);
 }
 
-/* Auto-save Indicator */
-.auto-save-indicator {
+/* Status Indicator */
+.status-indicator {
   position: fixed;
-  bottom: 20px;
+  bottom: 30px;
   left: 50%;
   transform: translateX(-50%);
-  padding: 8px 16px;
-  background: rgba(76, 175, 80, 0.2);
+  padding: 12px 24px;
+  background: rgba(0, 0, 0, 0.8);
   backdrop-filter: blur(10px);
-  border: 1px solid rgba(76, 175, 80, 0.4);
-  border-radius: 20px;
-  color: #4caf50;
-  font-size: 12px;
+  border-radius: 24px;
+  color: white;
+  font-size: 14px;
   font-weight: 600;
-  z-index: 1000;
+  z-index: 998;
   pointer-events: none;
-  animation: fadeIn 0.3s ease;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
-/* Scrollbar Styling */
+/* Responsive */
+@media (max-width: 768px) {
+  .welcome-card {
+    padding: 32px 24px;
+  }
+
+  .welcome-features {
+    grid-template-columns: 1fr;
+  }
+
+  .fab {
+    width: 50px;
+    height: 50px;
+    font-size: 20px;
+    bottom: 20px;
+    right: 20px;
+  }
+}
+
+/* Scrollbar */
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
@@ -247,109 +256,9 @@ body {
 
 ::-webkit-scrollbar-thumb {
   background: rgba(102, 126, 234, 0.5);
-  border-radius: 5px;
+  border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(102, 126, 234, 0.7);
-}
-
-/* Dark Mode Adjustments */
-body.dark-mode {
-  background: #0a0a0a;
-}
-
-body.dark-mode .auto-save-indicator {
-  background: rgba(76, 175, 80, 0.15);
-}
-
-/* Responsive Design */
-@media (max-width: 768px) {
-  .tutorial-content {
-    padding: 24px;
-    max-width: 90%;
-  }
-
-  .tutorial-content h2 {
-    font-size: 24px;
-  }
-
-  .tutorial-section h3 {
-    font-size: 18px;
-  }
-
-  .fab {
-    width: 50px;
-    height: 50px;
-    font-size: 20px;
-    bottom: 80px;
-    right: 20px;
-  }
-}
-
-/* Utility Classes */
-.hidden {
-  display: none !important;
-}
-
-.fade-in {
-  animation: fadeIn 0.3s ease;
-}
-
-.slide-up {
-  animation: slideUp 0.4s ease;
-}
-
-.pulse {
-  animation: pulse 2s ease-in-out infinite;
-}
-
-@keyframes pulse {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.5;
-  }
-}
-
-/* Accessibility */
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
-}
-
-/* Focus Styles */
-button:focus-visible,
-input:focus-visible,
-select:focus-visible,
-textarea:focus-visible {
-  outline: 2px solid #667eea;
-  outline-offset: 2px;
-}
-
-/* Selection */
-::selection {
-  background: rgba(102, 126, 234, 0.3);
-  color: white;
-}
-
-::-moz-selection {
-  background: rgba(102, 126, 234, 0.3);
-  color: white;
-}
-
-/* Canvas Container */
-#canvas-container {
-  cursor: crosshair;
-}
-
-#canvas-container canvas {
-  display: block;
-  outline: none;
 }
