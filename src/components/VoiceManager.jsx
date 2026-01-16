@@ -15,6 +15,7 @@ export function VoiceManager({
   serverUrl = 'http://localhost:3001'
 }) {
   const [networkManager, setNetworkManager] = useState(null);
+  const [localUserId, setLocalUserId] = useState(null);
   const [allUsers, setAllUsers] = useState([]);
   const [isMuted, setIsMuted] = useState(true);
   const [isVideoEnabled, setIsVideoEnabled] = useState(false);
@@ -36,7 +37,7 @@ export function VoiceManager({
     setRemoteVolume,
     toggleMute: webRTCToggleMute,
     toggleVideo: webRTCToggleVideo,
-  } = useWebRTC(networkManager?.getSocket(), currentUser?.id);
+  } = useWebRTC(networkManager?.getSocket(), localUserId);
 
   // Voice Activity Detection
   const { isSpeaking, audioLevel } = useVoiceActivityDetection(localStream);
@@ -64,7 +65,9 @@ export function VoiceManager({
       name: currentUser?.name || 'Player',
       position: currentUser?.position || { x: 10, y: 10 },
     }).then(() => {
-      console.log('Connected to server');
+      const userId = manager.getLocalUserId();
+      console.log('Connected to server with ID:', userId);
+      setLocalUserId(userId);
       setIsConnected(true);
     }).catch((err) => {
       console.error('Failed to connect:', err);

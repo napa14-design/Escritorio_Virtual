@@ -30,6 +30,9 @@ export class MainScene extends Phaser.Scene {
     this.editMode = false;
     this.isDragging = false;
 
+    // Multiplayer
+    this.remoteAvatars = new Map();
+
     // Criar ambiente
     this.createFloor();
     this.createGrid();
@@ -442,6 +445,61 @@ export class MainScene extends Phaser.Scene {
     });
     this.debugText.setDepth(10000);
     this.debugText.setScrollFactor(0);
+  }
+
+  /**
+   * Adiciona um avatar remoto (multiplayer)
+   */
+  addRemoteAvatar(userData) {
+    const { id, name, position, customization } = userData;
+
+    // Não adicionar se já existe
+    if (this.remoteAvatars.has(id)) {
+      console.warn(`Avatar ${id} already exists`);
+      return this.remoteAvatars.get(id);
+    }
+
+    // Criar avatar
+    const avatar = new Avatar(
+      this,
+      position?.x || 10,
+      position?.y || 10,
+      customization || {}
+    );
+
+    avatar.setName(name || 'Remote User');
+    this.add.existing(avatar);
+
+    // Adicionar ao mapa
+    this.remoteAvatars.set(id, avatar);
+
+    console.log(`Added remote avatar: ${name} (${id})`);
+
+    return avatar;
+  }
+
+  /**
+   * Remove um avatar remoto
+   */
+  removeRemoteAvatar(userId) {
+    const avatar = this.remoteAvatars.get(userId);
+
+    if (avatar) {
+      avatar.destroy();
+      this.remoteAvatars.delete(userId);
+      console.log(`Removed remote avatar: ${userId}`);
+    }
+  }
+
+  /**
+   * Atualiza posição de um avatar remoto
+   */
+  updateRemoteAvatarPosition(userId, position) {
+    const avatar = this.remoteAvatars.get(userId);
+
+    if (avatar) {
+      avatar.moveToGrid(position.x, position.y, this.pathfinding);
+    }
   }
 
   /**
