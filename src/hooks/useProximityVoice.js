@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback } from 'react';
+import { canHearUser, findZoneAtPosition, AUDIO_ZONE_TYPES } from '../config/audioZones';
 
 /**
  * Configuração padrão de proximidade
@@ -41,13 +42,14 @@ function calculateVolume(distance, config) {
 }
 
 /**
- * Hook para gerenciar volume de voz baseado em proximidade
+ * Hook para gerenciar volume de voz baseado em proximidade e zonas de áudio
  */
 export function useProximityVoice(
   currentUserPosition,
   allUsers,
   webRTCConnections,
   setRemoteVolume,
+  audioZones = [],
   config = DEFAULT_PROXIMITY_CONFIG
 ) {
   const intervalRef = useRef(null);
@@ -92,17 +94,56 @@ export function useProximityVoice(
   }, [setupAudioContext]);
 
   /**
-   * Atualiza volumes baseado em proximidade
+   * Atualiza volumes baseado em proximidade e zonas de áudio
    */
   const updateProximityVolumes = useCallback(() => {
     if (!currentUserPosition || !allUsers) return;
+
+    // Encontrar zona do usuário atual
+    const currentUserZone = findZoneAtPosition(currentUserPosition.x, currentUserPosition.y, audioZones);
 
     allUsers.forEach(user => {
       // Não processar o próprio usuário
       if (user.isLocalUser) return;
 
       const distance = calculateDistance(currentUserPosition, user.position);
-      const volume = calculateVolume(distance, config);
+      let volume = 0;
+      let canHear = true;
+      let zoneReason = 'normal';
+
+      // Verificar se pode ouvir baseado em zonas
+      if (audioZones && audioZones.length > 0) {
+        const hearResult = canHearUser(
+          currentUserPosition,
+          user.position,
+          user.id,
+          audioZones
+        );
+
+        canHear = hearResult.canHear;
+        zoneReason = hearResult.reason;
+
+        if (!canHear) {
+          volume = 0;
+        } else {
+          // Calcular volume baseado no tipo de zona
+          const userZone = findZoneAtPosition(user.position.x, user.position.y, audioZones);
+
+          if (userZone && userZone.type === AUDIO_ZONE_TYPES.BROADCAST) {
+            // Broadcast: volume total independente de distância
+            volume = 1;
+          } else if (userZone && userZone.type === AUDIO_ZONE_TYPES.PRIVATE) {
+            // Private: volume total se na mesma sala
+            volume = 1;
+          } else {
+            // Normal ou sem zona: usar proximidade
+            volume = calculateVolume(distance, config);
+          }
+        }
+      } else {
+        // Sem zonas: usar proximidade normal
+        volume = calculateVolume(distance, config);
+      }
 
       // Atualizar volume via WebRTC
       if (setRemoteVolume) {
@@ -117,7 +158,7 @@ export function useProximityVoice(
           // Suavizar transição de volume
           audioNodes.gainNode.gain.setTargetAtTime(
             volume,
-            audioContextRef.current.currentTime,
+            audioContextRef.current?.currentTime || 0,
             0.1
           );
         }
@@ -127,10 +168,12 @@ export function useProximityVoice(
       user.proximityData = {
         distance,
         volume,
-        isInRange: distance <= config.maxDistance,
+        isInRange: canHear,
+        zone: findZoneAtPosition(user.position.x, user.position.y, audioZones),
+        zoneReason,
       };
     });
-  }, [currentUserPosition, allUsers, config, setRemoteVolume, webRTCConnections, getGainNode]);
+  }, [currentUserPosition, allUsers, audioZones, config, setRemoteVolume, webRTCConnections, getGainNode]);
 
   /**
    * Inicia atualização periódica de volumes

@@ -6,6 +6,7 @@ import NetworkManager from '../systems/NetworkManager';
 import AudioControls from '../ui/AudioControls';
 import ProximityVideoPanel from '../ui/ProximityVideoPanel';
 import { useToast } from '../ui/Toast';
+import { DEFAULT_AUDIO_ZONES, findZoneAtPosition } from '../config/audioZones';
 
 /**
  * VoiceManager - Componente que gerencia todo o sistema de voz/vídeo
@@ -22,10 +23,12 @@ export function VoiceManager({
   const [isVideoEnabled, setIsVideoEnabled] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
+  const [currentZone, setCurrentZone] = useState(null);
 
   const networkRef = useRef(null);
   const remoteAvatarsRef = useRef(new Map());
   const toast = useToast();
+  const audioZones = DEFAULT_AUDIO_ZONES;
 
   // WebRTC hook
   const {
@@ -51,7 +54,8 @@ export function VoiceManager({
     currentUserPosition,
     allUsers,
     connections,
-    setRemoteVolume
+    setRemoteVolume,
+    audioZones
   );
 
   /**
@@ -117,6 +121,35 @@ export function VoiceManager({
       networkManager.updatePosition(currentUserPosition);
     }
   }, [currentUserPosition, networkManager]);
+
+  /**
+   * Detecta quando usuário entra/sai de uma zona
+   */
+  useEffect(() => {
+    if (!currentUserPosition) return;
+
+    const zone = findZoneAtPosition(currentUserPosition.x, currentUserPosition.y, audioZones);
+
+    // Mudou de zona
+    if (zone?.id !== currentZone?.id) {
+      // Saiu de uma zona
+      if (currentZone && !zone) {
+        toast.info(`Você saiu de: ${currentZone.name}`, {
+          duration: 2000,
+        });
+      }
+
+      // Entrou em uma zona
+      if (zone && zone.id !== currentZone?.id) {
+        toast.info(`${zone.icon} ${zone.name}`, {
+          title: 'Você entrou em',
+          duration: 3000,
+        });
+      }
+
+      setCurrentZone(zone);
+    }
+  }, [currentUserPosition, audioZones, currentZone, toast]);
 
   /**
    * Atualiza indicador de fala do avatar local

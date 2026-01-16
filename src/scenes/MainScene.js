@@ -5,6 +5,7 @@ import Pathfinding from '../systems/Pathfinding';
 import Avatar from '../entities/Avatar';
 import IsometricObject from '../entities/IsometricObject';
 import { getObjectById } from '../config/objectsLibrary';
+import { DEFAULT_AUDIO_ZONES } from '../config/audioZones';
 
 /**
  * Cena principal do escritório virtual isométrico
@@ -35,6 +36,7 @@ export class MainScene extends Phaser.Scene {
 
     // Criar ambiente
     this.createFloor();
+    this.createAudioZones();
     this.createGrid();
 
     // Criar avatar do jogador
@@ -90,6 +92,75 @@ export class MainScene extends Phaser.Scene {
         this.floorContainer.add(tile);
       }
     }
+  }
+
+  /**
+   * Cria zonas de áudio visualmente
+   */
+  createAudioZones() {
+    this.audioZonesContainer = this.add.container(0, 0);
+    this.audioZonesContainer.setDepth(5); // Acima do piso, abaixo dos objetos
+
+    DEFAULT_AUDIO_ZONES.forEach(zone => {
+      const { bounds, color, opacity, name, icon } = zone;
+
+      // Criar retângulo da zona
+      const graphics = this.add.graphics();
+
+      // Converter cor hex string para número
+      const colorNum = parseInt(color.replace('#', ''), 16);
+
+      graphics.fillStyle(colorNum, opacity);
+      graphics.lineStyle(2, colorNum, 0.5);
+
+      // Desenhar retângulo isométrico da zona
+      for (let y = bounds.y; y < bounds.y + bounds.height; y++) {
+        for (let x = bounds.x; x < bounds.x + bounds.width; x++) {
+          const iso = cartesianToIsometric(x, y);
+
+          graphics.beginPath();
+          graphics.moveTo(iso.x, iso.y);
+          graphics.lineTo(iso.x + ISO_CONFIG.TILE_WIDTH_HALF, iso.y + ISO_CONFIG.TILE_HEIGHT_HALF);
+          graphics.lineTo(iso.x, iso.y + ISO_CONFIG.TILE_HEIGHT);
+          graphics.lineTo(iso.x - ISO_CONFIG.TILE_WIDTH_HALF, iso.y + ISO_CONFIG.TILE_HEIGHT_HALF);
+          graphics.closePath();
+          graphics.fillPath();
+        }
+      }
+
+      // Borda do perímetro
+      const topLeft = cartesianToIsometric(bounds.x, bounds.y);
+      const topRight = cartesianToIsometric(bounds.x + bounds.width, bounds.y);
+      const bottomLeft = cartesianToIsometric(bounds.x, bounds.y + bounds.height);
+      const bottomRight = cartesianToIsometric(bounds.x + bounds.width, bounds.y + bounds.height);
+
+      graphics.strokeRect(
+        topLeft.x,
+        topLeft.y,
+        topRight.x - topLeft.x,
+        bottomLeft.y - topLeft.y
+      );
+
+      // Label da zona (centro)
+      const centerX = bounds.x + bounds.width / 2;
+      const centerY = bounds.y + bounds.height / 2;
+      const centerIso = cartesianToIsometric(centerX, centerY);
+
+      const label = this.add.text(centerIso.x, centerIso.y - 20, `${icon} ${name}`, {
+        fontSize: '14px',
+        fontFamily: 'Arial',
+        color: '#ffffff',
+        backgroundColor: color + '99',
+        padding: { x: 8, y: 4 },
+        stroke: '#000000',
+        strokeThickness: 2,
+      });
+      label.setOrigin(0.5);
+      label.setDepth(6);
+
+      this.audioZonesContainer.add(graphics);
+      this.audioZonesContainer.add(label);
+    });
   }
 
   /**
