@@ -26,6 +26,7 @@ export class Avatar extends Phaser.GameObjects.Container {
     this.currentPath = [];
     this.pathIndex = 0;
     this.direction = 's'; // direção: n, ne, e, se, s, sw, w, nw
+    this.isSpeaking = false;
 
     // Movimento
     this.moveSpeed = AVATAR_CONFIG.WALK_SPEED;
@@ -79,6 +80,11 @@ export class Avatar extends Phaser.GameObjects.Container {
     // Sombra
     this.shadow = this.scene.add.ellipse(0, 8, 20, 10, 0x000000, 0.3);
     this.add(this.shadow);
+
+    // Indicador de fala (círculo pulsante)
+    this.speakingIndicator = this.scene.add.graphics();
+    this.speakingIndicator.setVisible(false);
+    this.add(this.speakingIndicator);
   }
 
   /**
@@ -112,9 +118,36 @@ export class Avatar extends Phaser.GameObjects.Container {
   }
 
   /**
+   * Define se o usuário está falando
+   */
+  setSpeaking(speaking) {
+    this.isSpeaking = speaking;
+    this.speakingIndicator.setVisible(speaking);
+
+    if (speaking) {
+      // Desenhar círculo pulsante verde
+      this.speakingIndicator.clear();
+      this.speakingIndicator.lineStyle(3, 0x10b981, 1);
+      this.speakingIndicator.strokeCircle(0, -8, 25);
+    }
+  }
+
+  /**
    * Atualiza movimento ao longo do caminho
    */
   update(time, delta) {
+    // Atualizar animação do indicador de fala
+    if (this.isSpeaking) {
+      const pulse = Math.sin(time * 0.005) * 0.3 + 0.7;
+      this.speakingIndicator.setAlpha(pulse);
+
+      // Redesenhar com tamanho variável
+      const radius = 25 + Math.sin(time * 0.008) * 3;
+      this.speakingIndicator.clear();
+      this.speakingIndicator.lineStyle(3, 0x10b981, 1);
+      this.speakingIndicator.strokeCircle(0, -8, radius);
+    }
+
     if (!this.isWalking || this.currentPath.length === 0) {
       this.playIdleAnimation();
       return;
@@ -290,6 +323,7 @@ export class Avatar extends Phaser.GameObjects.Container {
     if (this.hair) this.hair.destroy();
     if (this.nameText) this.nameText.destroy();
     if (this.shadow) this.shadow.destroy();
+    if (this.speakingIndicator) this.speakingIndicator.destroy();
 
     super.destroy(fromScene);
   }

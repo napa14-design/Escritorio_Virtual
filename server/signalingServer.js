@@ -1,0 +1,239 @@
+/**
+ * Servidor de Sinalização WebRTC + Sincronização Multiplayer
+ *
+ * Este servidor gerencia:
+ * - Sincronização de posições de usuários
+ * - Sinalização WebRTC para conexões peer-to-peer
+ * - Estado de mídia (mute, vídeo)
+ * - Chat em tempo real
+ */
+
+import { createServer } from 'http';
+import { Server } from 'socket.io';
+
+const PORT = process.env.PORT || 3001;
+const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:5173';
+
+// Estado do servidor
+const rooms = new Map();
+
+/**
+ * Estrutura de uma sala
+ */
+function createRoom(roomId) {
+  return {
+    id: roomId,
+    users: new Map(),
+    createdAt: Date.now(),
+  };
+}
+
+/**
+ * Estrutura de um usuário
+ */
+function createUser(userId, userData) {
+  return {
+    id: userId,
+    name: userData.name || 'Player',
+    position: userData.position || { x: 10, y: 10 },
+    mediaState: {
+      isMuted: true,
+      isVideoEnabled: false,
+      isScreenSharing: false,
+      isSpeaking: false,
+    },
+    joinedAt: Date.now(),
+  };
+}
+
+/**
+ * Inicializa servidor
+ */
+function startServer() {
+  const httpServer = createServer();
+  const io = new Server(httpServer, {
+    cors: {
+      origin: CORS_ORIGIN,
+      methods: ['GET', 'POST'],
+      credentials: true,
+    },
+  });
+
+  console.log('🚀 Signaling Server starting...');
+
+  // Eventos do Socket.io
+  io.on('connection', (socket) => {
+    console.log(`✅ User connected: ${socket.id}`);
+
+    /**
+     * Usuário entra em uma sala
+     */
+    socket.on('join-room', ({ roomId, userData }) => {
+      console.log(`👤 ${socket.id} joining room: ${roomId}`);
+
+      // Criar sala se não existe
+      if (!rooms.has(roomId)) {
+        rooms.set(roomId, createRoom(roomId));
+      }
+
+      const room = rooms.get(roomId);
+      const user = createUser(socket.id, userData);
+
+      // Adicionar usuário à sala
+      room.users.set(socket.id, user);
+      socket.join(roomId);
+
+      // Enviar estado atual da sala para o novo usuário
+      socket.emit('room-state', {
+        roomId,
+        users: Array.from(room.users.values()),
+      });
+
+      // Notificar outros usuários sobre novo usuário
+      socket.to(roomId).emit('user-joined', user);
+
+      console.log(`📊 Room ${roomId} now has ${room.users.size} users`);
+    });
+
+    /**
+     * Usuário sai da sala
+     */
+    socket.on('leave-room', ({ roomId }) => {
+      handleUserLeave(socket, roomId);
+    });
+
+    /**
+     * Atualizar posição
+     */
+    socket.on('update-position', ({ roomId, position }) => {
+      const room = rooms.get(roomId);
+      if (!room) return;
+
+      const user = room.users.get(socket.id);
+      if (!user) return;
+
+      user.position = position;
+
+      // Broadcast para outros usuários na sala
+      socket.to(roomId).emit('user-moved', {
+        userId: socket.id,
+        position,
+      });
+    });
+
+    /**
+     * Atualizar estado de mídia
+     */
+    socket.on('update-media', ({ roomId, mediaState }) => {
+      const room = rooms.get(roomId);
+      if (!room) return;
+
+      const user = room.users.get(socket.id);
+      if (!user) return;
+
+      user.mediaState = { ...user.mediaState, ...mediaState };
+
+      // Broadcast para outros usuários na sala
+      socket.to(roomId).emit('user-media-changed', {
+        userId: socket.id,
+        mediaState: user.mediaState,
+      });
+    });
+
+    /**
+     * Sinalização WebRTC
+     */
+    socket.on('webrtc-signal', ({ targetUserId, signal, senderId }) => {
+      console.log(`🔄 Relaying WebRTC signal from ${senderId} to ${targetUserId}`);
+
+      // Enviar sinal para o usuário específico
+      io.to(targetUserId).emit('webrtc-signal', {
+        senderId: senderId || socket.id,
+        signal,
+      });
+    });
+
+    /**
+     * Mensagem de chat
+     */
+    socket.on('chat-message', ({ roomId, message }) => {
+      const room = rooms.get(roomId);
+      if (!room) return;
+
+      const user = room.users.get(socket.id);
+      if (!user) return;
+
+      // Broadcast mensagem para a sala
+      io.to(roomId).emit('chat-message', {
+        userId: socket.id,
+        userName: user.name,
+        message,
+        timestamp: Date.now(),
+      });
+    });
+
+    /**
+     * Desconexão
+     */
+    socket.on('disconnect', () => {
+      console.log(`❌ User disconnected: ${socket.id}`);
+
+      // Remover usuário de todas as salas
+      rooms.forEach((room, roomId) => {
+        if (room.users.has(socket.id)) {
+          handleUserLeave(socket, roomId);
+        }
+      });
+    });
+
+    /**
+     * Erro
+     */
+    socket.on('error', (error) => {
+      console.error(`⚠️  Socket error from ${socket.id}:`, error);
+    });
+  });
+
+  /**
+   * Handle de saída de usuário
+   */
+  function handleUserLeave(socket, roomId) {
+    const room = rooms.get(roomId);
+    if (!room) return;
+
+    // Remover usuário
+    room.users.delete(socket.id);
+    socket.leave(roomId);
+
+    // Notificar outros usuários
+    socket.to(roomId).emit('user-left', socket.id);
+
+    console.log(`👋 ${socket.id} left room ${roomId}`);
+    console.log(`📊 Room ${roomId} now has ${room.users.size} users`);
+
+    // Remover sala se vazia
+    if (room.users.size === 0) {
+      rooms.delete(roomId);
+      console.log(`🗑️  Room ${roomId} deleted (empty)`);
+    }
+  }
+
+  // Iniciar servidor HTTP
+  httpServer.listen(PORT, () => {
+    console.log(`✅ Signaling Server running on port ${PORT}`);
+    console.log(`🌐 CORS enabled for: ${CORS_ORIGIN}`);
+    console.log(`📡 WebRTC signaling ready`);
+  });
+
+  // Logs periódicos
+  setInterval(() => {
+    console.log(`📊 Status: ${rooms.size} room(s), Total users: ${
+      Array.from(rooms.values()).reduce((sum, room) => sum + room.users.size, 0)
+    }`);
+  }, 30000);
+
+  return io;
+}
+
+// Iniciar servidor
+startServer();

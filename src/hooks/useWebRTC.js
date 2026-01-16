@@ -1,0 +1,254 @@
+import { useState, useRef, useEffect, useCallback } from 'react';
+import SimplePeer from 'simple-peer';
+
+/**
+ * Hook para gerenciar conexões WebRTC com outros usuários
+ */
+export function useWebRTC(socket, localUserId) {
+  const [connections, setConnections] = useState(new Map());
+  const [localStream, setLocalStream] = useState(null);
+  const [error, setError] = useState(null);
+
+  const connectionsRef = useRef(new Map());
+  const localStreamRef = useRef(null);
+
+  // Sincronizar refs com state
+  useEffect(() => {
+    connectionsRef.current = connections;
+  }, [connections]);
+
+  useEffect(() => {
+    localStreamRef.current = localStream;
+  }, [localStream]);
+
+  /**
+   * Inicializa captura de mídia local (áudio/vídeo)
+   */
+  const initializeMedia = useCallback(async (audioEnabled = true, videoEnabled = false) => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+        video: videoEnabled ? {
+          width: { ideal: 320 },
+          height: { ideal: 240 },
+          frameRate: { ideal: 15 },
+        } : false,
+      });
+
+      localStreamRef.current = stream;
+      setLocalStream(stream);
+      setError(null);
+
+      return stream;
+    } catch (err) {
+      console.error('Error accessing media devices:', err);
+      setError(err.message);
+      throw err;
+    }
+  }, []);
+
+  /**
+   * Cria conexão peer-to-peer com outro usuário
+   */
+  const createPeerConnection = useCallback((targetUserId, initiator = false) => {
+    if (!localStreamRef.current) {
+      console.warn('No local stream available');
+      return null;
+    }
+
+    // Verificar se já existe conexão
+    if (connectionsRef.current.has(targetUserId)) {
+      return connectionsRef.current.get(targetUserId);
+    }
+
+    console.log(`Creating peer connection with ${targetUserId} (initiator: ${initiator})`);
+
+    const peer = new SimplePeer({
+      initiator,
+      stream: localStreamRef.current,
+      trickle: true,
+      config: {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+        ],
+      },
+    });
+
+    const connectionData = {
+      peer,
+      userId: targetUserId,
+      remoteStream: null,
+      currentVolume: 0,
+      isConnected: false,
+      audioEnabled: true,
+      videoEnabled: false,
+    };
+
+    // Eventos do peer
+    peer.on('signal', (signal) => {
+      // Enviar sinal via socket para o outro usuário
+      if (socket && socket.connected) {
+        socket.emit('webrtc-signal', {
+          targetUserId,
+          signal,
+          senderId: localUserId,
+        });
+      }
+    });
+
+    peer.on('stream', (stream) => {
+      console.log(`Received remote stream from ${targetUserId}`);
+      connectionData.remoteStream = stream;
+
+      // Atualizar state
+      setConnections(new Map(connectionsRef.current));
+    });
+
+    peer.on('connect', () => {
+      console.log(`Connected to ${targetUserId}`);
+      connectionData.isConnected = true;
+      setConnections(new Map(connectionsRef.current));
+    });
+
+    peer.on('error', (err) => {
+      console.error(`Peer connection error with ${targetUserId}:`, err);
+      // Remover conexão com erro
+      removePeerConnection(targetUserId);
+    });
+
+    peer.on('close', () => {
+      console.log(`Connection closed with ${targetUserId}`);
+      removePeerConnection(targetUserId);
+    });
+
+    // Adicionar ao map
+    connectionsRef.current.set(targetUserId, connectionData);
+    setConnections(new Map(connectionsRef.current));
+
+    return connectionData;
+  }, [socket, localUserId]);
+
+  /**
+   * Processa sinal WebRTC recebido
+   */
+  const handleSignal = useCallback((senderId, signal) => {
+    let connection = connectionsRef.current.get(senderId);
+
+    if (!connection) {
+      // Criar nova conexão como receptor
+      connection = createPeerConnection(senderId, false);
+    }
+
+    if (connection && connection.peer) {
+      try {
+        connection.peer.signal(signal);
+      } catch (err) {
+        console.error('Error processing signal:', err);
+      }
+    }
+  }, [createPeerConnection]);
+
+  /**
+   * Remove conexão peer
+   */
+  const removePeerConnection = useCallback((userId) => {
+    const connection = connectionsRef.current.get(userId);
+
+    if (connection) {
+      if (connection.peer) {
+        connection.peer.destroy();
+      }
+
+      connectionsRef.current.delete(userId);
+      setConnections(new Map(connectionsRef.current));
+    }
+  }, []);
+
+  /**
+   * Ajusta volume do áudio remoto
+   */
+  const setRemoteVolume = useCallback((userId, volume) => {
+    const connection = connectionsRef.current.get(userId);
+
+    if (connection && connection.remoteStream) {
+      const audioTracks = connection.remoteStream.getAudioTracks();
+
+      // SimplePeer não permite controlar volume diretamente
+      // Precisamos usar Web Audio API
+      audioTracks.forEach(track => {
+        track.enabled = volume > 0;
+      });
+
+      connection.currentVolume = volume;
+    }
+  }, []);
+
+  /**
+   * Muta/desmuta áudio local
+   */
+  const toggleMute = useCallback(() => {
+    if (localStreamRef.current) {
+      const audioTracks = localStreamRef.current.getAudioTracks();
+      audioTracks.forEach(track => {
+        track.enabled = !track.enabled;
+      });
+
+      return !audioTracks[0]?.enabled;
+    }
+    return false;
+  }, []);
+
+  /**
+   * Liga/desliga vídeo local
+   */
+  const toggleVideo = useCallback(() => {
+    if (localStreamRef.current) {
+      const videoTracks = localStreamRef.current.getVideoTracks();
+      videoTracks.forEach(track => {
+        track.enabled = !track.enabled;
+      });
+
+      return videoTracks[0]?.enabled || false;
+    }
+    return false;
+  }, []);
+
+  /**
+   * Cleanup ao desmontar
+   */
+  useEffect(() => {
+    return () => {
+      // Fechar todas as conexões
+      connectionsRef.current.forEach((connection) => {
+        if (connection.peer) {
+          connection.peer.destroy();
+        }
+      });
+
+      // Parar stream local
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, []);
+
+  return {
+    connections,
+    localStream,
+    error,
+    initializeMedia,
+    createPeerConnection,
+    handleSignal,
+    removePeerConnection,
+    setRemoteVolume,
+    toggleMute,
+    toggleVideo,
+  };
+}
+
+export default useWebRTC;

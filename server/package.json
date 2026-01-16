@@ -1,0 +1,14 @@
+{
+  "name": "escritorio-virtual-server",
+  "version": "1.0.0",
+  "description": "WebRTC signaling server for Virtual Office",
+  "type": "module",
+  "main": "signalingServer.js",
+  "scripts": {
+    "start": "node signalingServer.js",
+    "dev": "node --watch signalingServer.js"
+  },
+  "dependencies": {
+    "socket.io": "^4.8.1"
+  }
+}

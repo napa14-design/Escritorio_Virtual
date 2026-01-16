@@ -125,6 +125,56 @@ export class MainScene extends Phaser.Scene {
 
     this.player = new Avatar(this, startX, startY);
     this.player.setName(this.playerName);
+
+    // Mapa de avatares remotos
+    this.remoteAvatars = new Map();
+  }
+
+  /**
+   * Adiciona avatar de outro usuário
+   */
+  addRemoteAvatar(userData) {
+    const { id, name, position, customization } = userData;
+
+    // Verificar se já existe
+    if (this.remoteAvatars.has(id)) {
+      return this.remoteAvatars.get(id);
+    }
+
+    // Criar avatar
+    const avatar = new Avatar(
+      this,
+      position?.x || 10,
+      position?.y || 10,
+      customization
+    );
+    avatar.setName(name);
+
+    // Armazenar
+    this.remoteAvatars.set(id, avatar);
+
+    console.log(`Added remote avatar: ${name} (${id})`);
+
+    return avatar;
+  }
+
+  /**
+   * Remove avatar remoto
+   */
+  removeRemoteAvatar(userId) {
+    const avatar = this.remoteAvatars.get(userId);
+    if (avatar) {
+      avatar.destroy();
+      this.remoteAvatars.delete(userId);
+      console.log(`Removed remote avatar: ${userId}`);
+    }
+  }
+
+  /**
+   * Retorna avatar remoto
+   */
+  getRemoteAvatar(userId) {
+    return this.remoteAvatars.get(userId);
   }
 
   /**
@@ -398,9 +448,16 @@ export class MainScene extends Phaser.Scene {
    * Update loop
    */
   update(time, delta) {
-    // Atualizar avatar
+    // Atualizar avatar local
     if (this.player) {
       this.player.update(time, delta);
+    }
+
+    // Atualizar avatares remotos
+    if (this.remoteAvatars) {
+      this.remoteAvatars.forEach(avatar => {
+        avatar.update(time, delta);
+      });
     }
 
     // Atualizar debug
@@ -410,6 +467,7 @@ export class MainScene extends Phaser.Scene {
         `FPS: ${Math.round(this.game.loop.actualFps)}`,
         `Player: (${playerPos.x}, ${playerPos.y})`,
         `Objects: ${this.placedObjects.length}`,
+        `Remote Users: ${this.remoteAvatars?.size || 0}`,
         `Edit Mode: ${this.editMode ? 'ON' : 'OFF'}`,
         `Press E: Toggle Edit`,
         `Press G: Toggle Grid`,

@@ -4,6 +4,7 @@ import { GAME_CONFIG } from './config/gameConfig';
 import { MainScene } from './scenes/MainScene';
 import Sidebar from './ui/Sidebar';
 import HUD from './ui/HUD';
+import VoiceManager from './components/VoiceManager';
 import './App.css';
 
 function App() {
@@ -15,6 +16,7 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [playerName, setPlayerName] = useState('Player');
   const [showWelcome, setShowWelcome] = useState(true);
+  const [currentUserPosition, setCurrentUserPosition] = useState({ x: 10, y: 10 });
 
   useEffect(() => {
     if (phaserGameRef.current) return;
@@ -43,11 +45,27 @@ function App() {
       setSelectedObject(object);
     });
 
+    // Escutar mudanças de posição do jogador
+    const positionUpdateInterval = setInterval(() => {
+      if (game.scene.scenes[0]?.player) {
+        const pos = game.scene.scenes[0].player.getGridPosition();
+        setCurrentUserPosition(pos);
+      }
+    }, 100);
+
     return () => {
+      clearInterval(positionUpdateInterval);
       game.destroy(true);
       phaserGameRef.current = null;
     };
   }, []);
+
+  // Dados do usuário atual para o VoiceManager
+  const currentUser = {
+    id: 'local-user',
+    name: playerName,
+    position: currentUserPosition,
+  };
 
   const handleStartGame = (name) => {
     setPlayerName(name || 'Player');
@@ -226,6 +244,15 @@ function App() {
         <div className="status-indicator">
           {editMode ? '🛠️ Modo Edição' : '🚶 Modo Navegação'}
         </div>
+      )}
+
+      {/* Voice Manager */}
+      {gameReady && !showWelcome && (
+        <VoiceManager
+          phaserGame={phaserGameRef.current}
+          currentUser={currentUser}
+          serverUrl="http://localhost:3001"
+        />
       )}
     </div>
   );
