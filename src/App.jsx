@@ -5,6 +5,7 @@ import { MainScene } from './scenes/MainScene';
 import Sidebar from './ui/Sidebar';
 import HUD from './ui/HUD';
 import VoiceManager from './components/VoiceManager';
+import { ToastProvider } from './ui/Toast';
 import './App.css';
 
 function App() {
@@ -133,7 +134,8 @@ function App() {
   };
 
   return (
-    <div className="app-container">
+    <ToastProvider>
+      <div className="app-container">
       {/* Welcome Screen */}
       {showWelcome && (
         <div className="welcome-screen">
@@ -255,6 +257,7 @@ function App() {
         />
       )}
     </div>
+    </ToastProvider>
   );
 }
 

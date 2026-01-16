@@ -87,6 +87,9 @@ export function useWebRTC(socket, localUserId) {
       isConnected: false,
       audioEnabled: true,
       videoEnabled: false,
+      reconnectAttempts: 0,
+      maxReconnectAttempts: 3,
+      lastConnected: Date.now(),
     };
 
     // Eventos do peer
@@ -112,18 +115,54 @@ export function useWebRTC(socket, localUserId) {
     peer.on('connect', () => {
       console.log(`Connected to ${targetUserId}`);
       connectionData.isConnected = true;
+      connectionData.reconnectAttempts = 0;
+      connectionData.lastConnected = Date.now();
       setConnections(new Map(connectionsRef.current));
     });
 
     peer.on('error', (err) => {
       console.error(`Peer connection error with ${targetUserId}:`, err);
-      // Remover conexão com erro
-      removePeerConnection(targetUserId);
+
+      // Tentar reconectar se não excedeu limite
+      if (connectionData.reconnectAttempts < connectionData.maxReconnectAttempts) {
+        connectionData.reconnectAttempts++;
+        console.log(`Attempting reconnect ${connectionData.reconnectAttempts}/${connectionData.maxReconnectAttempts} for ${targetUserId}`);
+
+        // Aguardar antes de reconectar (exponential backoff)
+        const delay = Math.min(1000 * Math.pow(2, connectionData.reconnectAttempts - 1), 8000);
+
+        setTimeout(() => {
+          // Remover conexão antiga
+          if (connectionData.peer) {
+            connectionData.peer.destroy();
+          }
+
+          // Criar nova conexão
+          connectionsRef.current.delete(targetUserId);
+          createPeerConnection(targetUserId, true);
+        }, delay);
+      } else {
+        // Excedeu tentativas, remover definitivamente
+        removePeerConnection(targetUserId);
+      }
     });
 
     peer.on('close', () => {
       console.log(`Connection closed with ${targetUserId}`);
-      removePeerConnection(targetUserId);
+
+      // Se fechou recentemente (< 5s após conectar), pode ser erro
+      const timeSinceConnect = Date.now() - connectionData.lastConnected;
+      if (timeSinceConnect < 5000 && connectionData.reconnectAttempts < connectionData.maxReconnectAttempts) {
+        connectionData.reconnectAttempts++;
+        console.log(`Connection closed too soon, attempting reconnect for ${targetUserId}`);
+
+        setTimeout(() => {
+          connectionsRef.current.delete(targetUserId);
+          createPeerConnection(targetUserId, true);
+        }, 2000);
+      } else {
+        removePeerConnection(targetUserId);
+      }
     });
 
     // Adicionar ao map

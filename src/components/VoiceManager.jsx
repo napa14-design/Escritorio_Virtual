@@ -5,6 +5,7 @@ import useProximityVoice from '../hooks/useProximityVoice';
 import NetworkManager from '../systems/NetworkManager';
 import AudioControls from '../ui/AudioControls';
 import ProximityVideoPanel from '../ui/ProximityVideoPanel';
+import { useToast } from '../ui/Toast';
 
 /**
  * VoiceManager - Componente que gerencia todo o sistema de voz/vídeo
@@ -24,6 +25,7 @@ export function VoiceManager({
 
   const networkRef = useRef(null);
   const remoteAvatarsRef = useRef(new Map());
+  const toast = useToast();
 
   // WebRTC hook
   const {
@@ -90,11 +92,22 @@ export function VoiceManager({
    */
   useEffect(() => {
     if (isConnected && !localStream) {
-      initializeMedia(true, false).catch((err) => {
-        console.error('Failed to initialize media:', err);
-      });
+      initializeMedia(true, false)
+        .then(() => {
+          toast.success('Conectado ao escritório virtual', {
+            title: 'Bem-vindo!',
+            duration: 3000,
+          });
+        })
+        .catch((err) => {
+          console.error('Failed to initialize media:', err);
+          toast.error('Não foi possível acessar microfone/câmera', {
+            title: 'Erro de Mídia',
+            duration: 5000,
+          });
+        });
     }
-  }, [isConnected, localStream, initializeMedia]);
+  }, [isConnected, localStream, initializeMedia, toast]);
 
   /**
    * Atualiza posição do usuário atual quando muda
@@ -162,13 +175,22 @@ export function VoiceManager({
     if (localStream) {
       createPeerConnection(userData.id, true);
     }
-  }, [phaserGame, localStream, createPeerConnection]);
+
+    // Notificação toast
+    toast.info(`${userData.name} entrou no escritório`, {
+      duration: 3000,
+    });
+  }, [phaserGame, localStream, createPeerConnection, toast]);
 
   /**
    * Handle usuário saiu
    */
   const handleUserLeft = useCallback((userId) => {
     console.log('User left:', userId);
+
+    // Pegar nome antes de remover
+    const user = allUsers.find(u => u.id === userId);
+    const userName = user?.name || 'User';
 
     // Remover da lista
     setAllUsers(prev => prev.filter(u => u.id !== userId));
@@ -182,7 +204,12 @@ export function VoiceManager({
 
     // Fechar conexão WebRTC
     removePeerConnection(userId);
-  }, [removePeerConnection]);
+
+    // Notificação toast
+    toast.info(`${userName} saiu do escritório`, {
+      duration: 3000,
+    });
+  }, [removePeerConnection, allUsers, toast]);
 
   /**
    * Handle usuário se moveu
