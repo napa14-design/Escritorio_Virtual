@@ -5,6 +5,7 @@ import useProximityVoice from '../hooks/useProximityVoice';
 import NetworkManager from '../systems/NetworkManager';
 import AudioControls from '../ui/AudioControls';
 import ProximityVideoPanel from '../ui/ProximityVideoPanel';
+import ChatManager from './ChatManager';
 import { useToast } from '../ui/Toast';
 import { DEFAULT_AUDIO_ZONES, findZoneAtPosition } from '../config/audioZones';
 
@@ -343,6 +344,17 @@ export function VoiceManager({
           speakingUsers={speakingUsers}
           maxVideosShown={4}
           layout="grid"
+        />
+      )}
+
+      {/* Chat System */}
+      {isConnected && (
+        <ChatManager
+          networkManager={networkManager}
+          phaserGame={phaserGame}
+          currentUser={currentUser}
+          allUsers={allUsers}
+          localUserId={localUserId}
         />
       )}
 
