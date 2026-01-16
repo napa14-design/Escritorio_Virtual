@@ -6,8 +6,10 @@ import NetworkManager from '../systems/NetworkManager';
 import AudioControls from '../ui/AudioControls';
 import ProximityVideoPanel from '../ui/ProximityVideoPanel';
 import ChatManager from './ChatManager';
+import SettingsModal from '../ui/SettingsModal';
 import { useToast } from '../ui/Toast';
 import { DEFAULT_AUDIO_ZONES, findZoneAtPosition } from '../config/audioZones';
+import { loadSettings, saveSettings, settingsToMediaConstraints, settingsToVADConfig } from '../utils/settingsStorage';
 
 /**
  * VoiceManager - Componente que gerencia todo o sistema de voz/vídeo
@@ -25,6 +27,8 @@ export function VoiceManager({
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [currentZone, setCurrentZone] = useState(null);
+  const [settings, setSettings] = useState(() => loadSettings());
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   const networkRef = useRef(null);
   const remoteAvatarsRef = useRef(new Map());
@@ -46,7 +50,8 @@ export function VoiceManager({
   } = useWebRTC(networkManager?.getSocket(), localUserId);
 
   // Voice Activity Detection
-  const { isSpeaking, audioLevel } = useVoiceActivityDetection(localStream);
+  const vadConfig = settingsToVADConfig(settings);
+  const { isSpeaking, audioLevel } = useVoiceActivityDetection(localStream, vadConfig);
   const { speakingUsers, isUserSpeaking } = useRemoteVoiceActivityDetection(connections);
 
   // Proximity Voice
@@ -97,7 +102,8 @@ export function VoiceManager({
    */
   useEffect(() => {
     if (isConnected && !localStream) {
-      initializeMedia(true, false)
+      const constraints = settingsToMediaConstraints(settings, isVideoEnabled);
+      initializeMedia(true, isVideoEnabled, constraints)
         .then(() => {
           toast.success('Conectado ao escritório virtual', {
             title: 'Bem-vindo!',
@@ -112,7 +118,7 @@ export function VoiceManager({
           });
         });
     }
-  }, [isConnected, localStream, initializeMedia, toast]);
+  }, [isConnected, localStream, initializeMedia, toast, settings, isVideoEnabled]);
 
   /**
    * Atualiza posição do usuário atual quando muda
@@ -309,11 +315,42 @@ export function VoiceManager({
   }, []);
 
   /**
-   * Open settings (TODO: implementar)
+   * Open settings
    */
   const handleOpenSettings = useCallback(() => {
-    console.log('Settings modal not yet implemented');
+    setIsSettingsOpen(true);
   }, []);
+
+  /**
+   * Apply settings
+   */
+  const handleApplySettings = useCallback(async (newSettings) => {
+    // Salvar no localStorage
+    saveSettings(newSettings);
+    setSettings(newSettings);
+
+    // Reinicializar mídia com novas configurações
+    if (localStream) {
+      // Parar stream atual
+      localStream.getTracks().forEach(track => track.stop());
+
+      // Aguardar um pouco antes de reinicializar
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      // Reinicializar com novas configurações
+      const constraints = settingsToMediaConstraints(newSettings, isVideoEnabled);
+      try {
+        await initializeMedia(true, isVideoEnabled, constraints);
+        toast.success('Configurações aplicadas', {
+          duration: 2000,
+        });
+      } catch (err) {
+        toast.error('Erro ao aplicar configurações', {
+          duration: 3000,
+        });
+      }
+    }
+  }, [localStream, isVideoEnabled, initializeMedia, toast]);
 
   const nearbyUsers = getNearbyUsers();
   const connectedUsers = allUsers.length;
@@ -374,6 +411,16 @@ export function VoiceManager({
           ⚠️ {webRTCError}
         </div>
       )}
+
+      {/* Settings Modal */}
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        onApplySettings={handleApplySettings}
+        currentSettings={settings}
+        localStream={localStream}
+        testAudioLevel={audioLevel}
+      />
     </>
   );
 }

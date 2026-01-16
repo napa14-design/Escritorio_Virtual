@@ -24,20 +24,23 @@ export function useWebRTC(socket, localUserId) {
   /**
    * Inicializa captura de mídia local (áudio/vídeo)
    */
-  const initializeMedia = useCallback(async (audioEnabled = true, videoEnabled = false) => {
+  const initializeMedia = useCallback(async (audioEnabled = true, videoEnabled = false, customConstraints = null) => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
+      // Usar constraints customizadas ou padrão
+      const constraints = customConstraints || {
+        audio: audioEnabled ? {
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
-        },
+        } : false,
         video: videoEnabled ? {
           width: { ideal: 320 },
           height: { ideal: 240 },
           frameRate: { ideal: 15 },
         } : false,
-      });
+      };
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
 
       localStreamRef.current = stream;
       setLocalStream(stream);
