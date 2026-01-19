@@ -7,6 +7,7 @@ import AudioControls from '../ui/AudioControls';
 import ProximityVideoPanel from '../ui/ProximityVideoPanel';
 import ChatManager from './ChatManager';
 import SettingsModal from '../ui/SettingsModal';
+import ScreenSharePreview from '../ui/ScreenSharePreview';
 import { useToast } from '../ui/Toast';
 import { DEFAULT_AUDIO_ZONES, findZoneAtPosition } from '../config/audioZones';
 import { loadSettings, saveSettings, settingsToMediaConstraints, settingsToVADConfig } from '../utils/settingsStorage';
@@ -25,6 +26,7 @@ export function VoiceManager({
   const [isMuted, setIsMuted] = useState(true);
   const [isVideoEnabled, setIsVideoEnabled] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [screenStream, setScreenStream] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
   const [currentZone, setCurrentZone] = useState(null);
   const [settings, setSettings] = useState(() => loadSettings());
@@ -47,6 +49,8 @@ export function VoiceManager({
     setRemoteVolume,
     toggleMute: webRTCToggleMute,
     toggleVideo: webRTCToggleVideo,
+    startScreenShare,
+    stopScreenShare,
   } = useWebRTC(networkManager?.getSocket(), localUserId);
 
   // Voice Activity Detection
@@ -342,11 +346,48 @@ export function VoiceManager({
   }, [webRTCToggleVideo, networkManager]);
 
   /**
-   * Toggle screen share (TODO: implementar)
+   * Toggle screen share
    */
-  const handleToggleScreenShare = useCallback(() => {
-    console.log('Screen sharing not yet implemented');
-  }, []);
+  const handleToggleScreenShare = useCallback(async () => {
+    if (isScreenSharing) {
+      // Parar compartilhamento
+      if (screenStream) {
+        screenStream.getTracks().forEach(track => track.stop());
+      }
+      stopScreenShare();
+      setScreenStream(null);
+      setIsScreenSharing(false);
+
+      if (networkManager) {
+        networkManager.updateMediaState({ isScreenSharing: false });
+      }
+
+      toast.info('Compartilhamento de tela parado', {
+        duration: 2000,
+      });
+    } else {
+      // Iniciar compartilhamento
+      try {
+        const stream = await startScreenShare();
+        setScreenStream(stream);
+        setIsScreenSharing(true);
+
+        if (networkManager) {
+          networkManager.updateMediaState({ isScreenSharing: true });
+        }
+
+        toast.success('Compartilhando tela', {
+          duration: 2000,
+        });
+      } catch (err) {
+        console.error('Failed to start screen share:', err);
+        toast.error('Não foi possível compartilhar a tela', {
+          title: 'Erro',
+          duration: 3000,
+        });
+      }
+    }
+  }, [isScreenSharing, screenStream, startScreenShare, stopScreenShare, networkManager, toast]);
 
   /**
    * Open settings
@@ -444,6 +485,15 @@ export function VoiceManager({
         }}>
           ⚠️ {webRTCError}
         </div>
+      )}
+
+      {/* Screen Share Preview */}
+      {isScreenSharing && screenStream && (
+        <ScreenSharePreview
+          stream={screenStream}
+          onClose={handleToggleScreenShare}
+          userName="Você"
+        />
       )}
 
       {/* Settings Modal */}

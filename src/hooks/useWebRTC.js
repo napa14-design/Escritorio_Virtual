@@ -261,6 +261,67 @@ export function useWebRTC(socket, localUserId) {
   }, []);
 
   /**
+   * Inicia compartilhamento de tela
+   */
+  const startScreenShare = useCallback(async () => {
+    try {
+      const screenStream = await navigator.mediaDevices.getDisplayMedia({
+        video: {
+          cursor: 'always',
+          displaySurface: 'monitor',
+        },
+        audio: false,
+      });
+
+      // Substituir track de vídeo em todas as conexões
+      const screenTrack = screenStream.getVideoTracks()[0];
+
+      connectionsRef.current.forEach((connection) => {
+        if (connection.peer && connection.peer._pc) {
+          const sender = connection.peer._pc.getSenders().find(s => s.track?.kind === 'video');
+          if (sender) {
+            sender.replaceTrack(screenTrack);
+          }
+        }
+      });
+
+      // Guardar referência ao stream original
+      const originalStream = localStreamRef.current;
+
+      // Quando o compartilhamento parar (usuário clica em "Parar compartilhamento")
+      screenTrack.onended = () => {
+        stopScreenShare(originalStream);
+      };
+
+      return screenStream;
+    } catch (err) {
+      console.error('Error starting screen share:', err);
+      throw err;
+    }
+  }, []);
+
+  /**
+   * Para compartilhamento de tela
+   */
+  const stopScreenShare = useCallback((originalStream) => {
+    if (!originalStream) {
+      originalStream = localStreamRef.current;
+    }
+
+    // Restaurar track de vídeo original em todas as conexões
+    const originalVideoTrack = originalStream?.getVideoTracks()[0];
+
+    connectionsRef.current.forEach((connection) => {
+      if (connection.peer && connection.peer._pc && originalVideoTrack) {
+        const sender = connection.peer._pc.getSenders().find(s => s.track?.kind === 'video');
+        if (sender) {
+          sender.replaceTrack(originalVideoTrack);
+        }
+      }
+    });
+  }, []);
+
+  /**
    * Cleanup ao desmontar
    */
   useEffect(() => {
@@ -290,6 +351,8 @@ export function useWebRTC(socket, localUserId) {
     setRemoteVolume,
     toggleMute,
     toggleVideo,
+    startScreenShare,
+    stopScreenShare,
   };
 }
 
