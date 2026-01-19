@@ -13,6 +13,7 @@ import ScreenSharePreview from '../ui/ScreenSharePreview';
 import StatusSelector from '../ui/StatusSelector';
 import EmoteSelector from '../ui/EmoteSelector';
 import Whiteboard from '../ui/Whiteboard';
+import NearbyUsersList from '../ui/NearbyUsersList';
 import { useToast } from '../ui/Toast';
 import { DEFAULT_AUDIO_ZONES, findZoneAtPosition } from '../config/audioZones';
 import { DEFAULT_STATUS, STATUS_CONFIG } from '../config/userStatus';
@@ -563,6 +564,62 @@ export function VoiceManager({
   const nearbyUsers = getNearbyUsers();
   const connectedUsers = allUsers.length;
 
+  /**
+   * Atualiza transparência dos avatars baseado na distância
+   */
+  useEffect(() => {
+    if (!phaserGame || !currentUserPosition) return;
+
+    const scene = phaserGame.scene.scenes[0];
+    if (!scene) return;
+
+    const maxDistance = 12; // Distância máxima para efeito de transparência
+
+    allUsers.forEach(user => {
+      if (user.isLocalUser) return;
+
+      const avatar = remoteAvatarsRef.current.get(user.id);
+      if (!avatar) return;
+
+      const distance = user.proximityData?.distance || 0;
+
+      if (distance > maxDistance) {
+        avatar.setDistanceOpacity(maxDistance, maxDistance);
+      } else {
+        avatar.setDistanceOpacity(distance, maxDistance);
+      }
+    });
+  }, [phaserGame, allUsers, currentUserPosition]);
+
+  /**
+   * Mostra círculo de proximidade no avatar do jogador
+   */
+  useEffect(() => {
+    if (!phaserGame) return;
+
+    const scene = phaserGame.scene.scenes[0];
+    if (!scene || !scene.player) return;
+
+    // Mostrar círculo de proximidade permanentemente
+    const maxDistance = 8; // Mesma distância do useProximityVoice
+    const radiusInPixels = maxDistance * 32; // Converter tiles para pixels (aproximado)
+    scene.player.showProximityCircle(radiusInPixels);
+
+    return () => {
+      if (scene && scene.player) {
+        scene.player.hideProximityCircle();
+      }
+    };
+  }, [phaserGame]);
+
+  /**
+   * Handle clique em usuário na lista de próximos
+   */
+  const handleNearbyUserClick = useCallback((user) => {
+    console.log('Clicked nearby user:', user);
+    // TODO: Implementar ações (teleport, perfil, etc)
+  }, []);
+
   return (
     <>
       {/* Audio Controls */}
@@ -688,6 +745,17 @@ export function VoiceManager({
         onClose={() => setIsWhiteboardOpen(false)}
         networkManager={networkManager}
       />
+
+      {/* Nearby Users List */}
+      {isConnected && (
+        <NearbyUsersList
+          nearbyUsers={nearbyUsers.map(user => ({
+            ...user,
+            isSpeaking: isUserSpeaking(user.id),
+          }))}
+          onUserClick={handleNearbyUserClick}
+        />
+      )}
     </>
   );
 }

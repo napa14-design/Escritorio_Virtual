@@ -224,9 +224,15 @@ export function useProximityVoice(
 
     return allUsers
       .filter(user => !user.isLocalUser && user.proximityData?.isInRange)
+      .map(user => ({
+        ...user,
+        distance: user.proximityData?.distance || 0,
+        volume: user.proximityData?.volume || 0,
+        zone: user.proximityData?.zone,
+      }))
       .sort((a, b) => {
-        const distA = a.proximityData?.distance || Infinity;
-        const distB = b.proximityData?.distance || Infinity;
+        const distA = a.distance || Infinity;
+        const distB = b.distance || Infinity;
         return distA - distB;
       });
   }, [allUsers, currentUserPosition]);
