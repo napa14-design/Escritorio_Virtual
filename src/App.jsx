@@ -4,6 +4,10 @@ import { GAME_CONFIG } from './config/gameConfig';
 import { MainScene } from './scenes/MainScene';
 import Sidebar from './ui/Sidebar';
 import HUD from './ui/HUD';
+import VoiceManager from './components/VoiceManager';
+import AvatarCustomization from './ui/AvatarCustomization';
+import { ToastProvider } from './ui/Toast';
+import { loadAvatarCustomization, saveAvatarCustomization } from './utils/avatarStorage';
 import './App.css';
 
 function App() {
@@ -15,6 +19,10 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [playerName, setPlayerName] = useState('Player');
   const [showWelcome, setShowWelcome] = useState(true);
+  const [currentUserPosition, setCurrentUserPosition] = useState({ x: 10, y: 10 });
+  const [avatarCustomization, setAvatarCustomization] = useState(() => loadAvatarCustomization());
+  const [isAvatarCustomizationOpen, setIsAvatarCustomizationOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   useEffect(() => {
     if (phaserGameRef.current) return;
@@ -43,21 +51,39 @@ function App() {
       setSelectedObject(object);
     });
 
+    // Escutar mudanças de posição do jogador
+    const positionUpdateInterval = setInterval(() => {
+      if (game.scene.scenes[0]?.player) {
+        const pos = game.scene.scenes[0].player.getGridPosition();
+        setCurrentUserPosition(pos);
+      }
+    }, 100);
+
     return () => {
+      clearInterval(positionUpdateInterval);
       game.destroy(true);
       phaserGameRef.current = null;
     };
   }, []);
 
+  // Dados do usuário atual para o VoiceManager
+  const currentUser = {
+    id: 'local-user',
+    name: playerName,
+    position: currentUserPosition,
+    customization: avatarCustomization,
+  };
+
   const handleStartGame = (name) => {
     setPlayerName(name || 'Player');
     setShowWelcome(false);
 
-    // Atualizar nome do jogador na cena
+    // Atualizar nome e customização do jogador na cena
     if (phaserGameRef.current) {
       const scene = phaserGameRef.current.scene.scenes[0];
       if (scene.player) {
         scene.player.setName(name || 'Player');
+        scene.player.updateCustomization(avatarCustomization);
       }
     }
   };
@@ -114,8 +140,23 @@ function App() {
     }
   };
 
+  const handleApplyAvatarCustomization = (customization) => {
+    // Salvar no localStorage
+    saveAvatarCustomization(customization);
+    setAvatarCustomization(customization);
+
+    // Atualizar avatar do jogador no Phaser
+    if (phaserGameRef.current) {
+      const scene = phaserGameRef.current.scene.scenes[0];
+      if (scene.player) {
+        scene.player.updateCustomization(customization);
+      }
+    }
+  };
+
   return (
-    <div className="app-container">
+    <ToastProvider>
+      <div className="app-container">
       {/* Welcome Screen */}
       {showWelcome && (
         <div className="welcome-screen">
@@ -195,6 +236,8 @@ function App() {
           onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
           selectedObject={selectedObject}
           playerName={playerName}
+          onOpenAvatarCustomization={() => setIsAvatarCustomizationOpen(true)}
+          onOpenSettings={() => setIsSettingsOpen(true)}
         />
       )}
 
@@ -227,7 +270,25 @@ function App() {
           {editMode ? '🛠️ Modo Edição' : '🚶 Modo Navegação'}
         </div>
       )}
+
+      {/* Voice Manager */}
+      {gameReady && !showWelcome && (
+        <VoiceManager
+          phaserGame={phaserGameRef.current}
+          currentUser={currentUser}
+          serverUrl="http://localhost:3001"
+        />
+      )}
+
+      {/* Avatar Customization */}
+      <AvatarCustomization
+        isOpen={isAvatarCustomizationOpen}
+        onClose={() => setIsAvatarCustomizationOpen(false)}
+        onApplyCustomization={handleApplyAvatarCustomization}
+        currentCustomization={avatarCustomization}
+      />
     </div>
+    </ToastProvider>
   );
 }
 

@@ -5,6 +5,8 @@ import Pathfinding from '../systems/Pathfinding';
 import Avatar from '../entities/Avatar';
 import IsometricObject from '../entities/IsometricObject';
 import { getObjectById } from '../config/objectsLibrary';
+import { DEFAULT_AUDIO_ZONES } from '../config/audioZones';
+import { SharedScreenManager } from '../systems/SharedScreenManager';
 
 /**
  * Cena principal do escritório virtual isométrico
@@ -18,6 +20,7 @@ export class MainScene extends Phaser.Scene {
     // Dados iniciais
     this.playerName = data.playerName || 'Player';
     this.roomData = data.roomData || null;
+    this.avatarCustomization = data.avatarCustomization || null;
   }
 
   create() {
@@ -25,13 +28,19 @@ export class MainScene extends Phaser.Scene {
     this.pathfinding = new Pathfinding();
     this.placedObjects = [];
     this.selectedObject = null;
+    this.sharedScreenManager = new SharedScreenManager(this);
 
     // Estado
     this.editMode = false;
     this.isDragging = false;
 
+    // Multiplayer
+    this.remoteAvatars = new Map();
+
     // Criar ambiente
     this.createFloor();
+    this.createAudioZones();
+    this.createSharedScreens();
     this.createGrid();
 
     // Criar avatar do jogador
@@ -90,6 +99,101 @@ export class MainScene extends Phaser.Scene {
   }
 
   /**
+   * Cria zonas de áudio visualmente
+   */
+  createAudioZones() {
+    this.audioZonesContainer = this.add.container(0, 0);
+    this.audioZonesContainer.setDepth(5); // Acima do piso, abaixo dos objetos
+
+    DEFAULT_AUDIO_ZONES.forEach(zone => {
+      const { bounds, color, opacity, name, icon } = zone;
+
+      // Criar retângulo da zona
+      const graphics = this.add.graphics();
+
+      // Converter cor hex string para número
+      const colorNum = parseInt(color.replace('#', ''), 16);
+
+      graphics.fillStyle(colorNum, opacity);
+      graphics.lineStyle(2, colorNum, 0.5);
+
+      // Desenhar retângulo isométrico da zona
+      for (let y = bounds.y; y < bounds.y + bounds.height; y++) {
+        for (let x = bounds.x; x < bounds.x + bounds.width; x++) {
+          const iso = cartesianToIsometric(x, y);
+
+          graphics.beginPath();
+          graphics.moveTo(iso.x, iso.y);
+          graphics.lineTo(iso.x + ISO_CONFIG.TILE_WIDTH_HALF, iso.y + ISO_CONFIG.TILE_HEIGHT_HALF);
+          graphics.lineTo(iso.x, iso.y + ISO_CONFIG.TILE_HEIGHT);
+          graphics.lineTo(iso.x - ISO_CONFIG.TILE_WIDTH_HALF, iso.y + ISO_CONFIG.TILE_HEIGHT_HALF);
+          graphics.closePath();
+          graphics.fillPath();
+        }
+      }
+
+      // Borda do perímetro
+      const topLeft = cartesianToIsometric(bounds.x, bounds.y);
+      const topRight = cartesianToIsometric(bounds.x + bounds.width, bounds.y);
+      const bottomLeft = cartesianToIsometric(bounds.x, bounds.y + bounds.height);
+      const bottomRight = cartesianToIsometric(bounds.x + bounds.width, bounds.y + bounds.height);
+
+      graphics.strokeRect(
+        topLeft.x,
+        topLeft.y,
+        topRight.x - topLeft.x,
+        bottomLeft.y - topLeft.y
+      );
+
+      // Label da zona (centro)
+      const centerX = bounds.x + bounds.width / 2;
+      const centerY = bounds.y + bounds.height / 2;
+      const centerIso = cartesianToIsometric(centerX, centerY);
+
+      const label = this.add.text(centerIso.x, centerIso.y - 20, `${icon} ${name}`, {
+        fontSize: '14px',
+        fontFamily: 'Arial',
+        color: '#ffffff',
+        backgroundColor: color + '99',
+        padding: { x: 8, y: 4 },
+        stroke: '#000000',
+        strokeThickness: 2,
+      });
+      label.setOrigin(0.5);
+      label.setDepth(6);
+
+      this.audioZonesContainer.add(graphics);
+      this.audioZonesContainer.add(label);
+    });
+  }
+
+  /**
+   * Cria telas compartilhadas no escritório
+   */
+  createSharedScreens() {
+    // Adicionar 2 telas grandes nas "paredes" do escritório
+    // Tela 1: No canto superior esquerdo
+    this.sharedScreenManager.addScreen(2, 2, {
+      width: 3,
+      height: 2,
+      name: 'Screen 1',
+      frameColor: 0x2d3748,
+      screenColor: 0x1a202c,
+    });
+
+    // Tela 2: No canto superior direito
+    this.sharedScreenManager.addScreen(GRID_CONFIG.WIDTH - 5, 2, {
+      width: 3,
+      height: 2,
+      name: 'Screen 2',
+      frameColor: 0x2d3748,
+      screenColor: 0x1a202c,
+    });
+
+    console.log('Created shared screens:', this.sharedScreenManager.getAllScreens().length);
+  }
+
+  /**
    * Cria grid de debug
    */
   createGrid() {
@@ -123,8 +227,58 @@ export class MainScene extends Phaser.Scene {
     const startX = Math.floor(GRID_CONFIG.WIDTH / 2);
     const startY = Math.floor(GRID_CONFIG.HEIGHT / 2);
 
-    this.player = new Avatar(this, startX, startY);
+    this.player = new Avatar(this, startX, startY, this.avatarCustomization);
     this.player.setName(this.playerName);
+
+    // Mapa de avatares remotos
+    this.remoteAvatars = new Map();
+  }
+
+  /**
+   * Adiciona avatar de outro usuário
+   */
+  addRemoteAvatar(userData) {
+    const { id, name, position, customization } = userData;
+
+    // Verificar se já existe
+    if (this.remoteAvatars.has(id)) {
+      return this.remoteAvatars.get(id);
+    }
+
+    // Criar avatar
+    const avatar = new Avatar(
+      this,
+      position?.x || 10,
+      position?.y || 10,
+      customization
+    );
+    avatar.setName(name);
+
+    // Armazenar
+    this.remoteAvatars.set(id, avatar);
+
+    console.log(`Added remote avatar: ${name} (${id})`);
+
+    return avatar;
+  }
+
+  /**
+   * Remove avatar remoto
+   */
+  removeRemoteAvatar(userId) {
+    const avatar = this.remoteAvatars.get(userId);
+    if (avatar) {
+      avatar.destroy();
+      this.remoteAvatars.delete(userId);
+      console.log(`Removed remote avatar: ${userId}`);
+    }
+  }
+
+  /**
+   * Retorna avatar remoto
+   */
+  getRemoteAvatar(userId) {
+    return this.remoteAvatars.get(userId);
   }
 
   /**
@@ -395,21 +549,93 @@ export class MainScene extends Phaser.Scene {
   }
 
   /**
+   * Adiciona um avatar remoto (multiplayer)
+   */
+  addRemoteAvatar(userData) {
+    const { id, name, position, customization } = userData;
+
+    // Não adicionar se já existe
+    if (this.remoteAvatars.has(id)) {
+      console.warn(`Avatar ${id} already exists`);
+      return this.remoteAvatars.get(id);
+    }
+
+    // Criar avatar
+    const avatar = new Avatar(
+      this,
+      position?.x || 10,
+      position?.y || 10,
+      customization || {}
+    );
+
+    avatar.setName(name || 'Remote User');
+    this.add.existing(avatar);
+
+    // Adicionar ao mapa
+    this.remoteAvatars.set(id, avatar);
+
+    console.log(`Added remote avatar: ${name} (${id})`);
+
+    return avatar;
+  }
+
+  /**
+   * Remove um avatar remoto
+   */
+  removeRemoteAvatar(userId) {
+    const avatar = this.remoteAvatars.get(userId);
+
+    if (avatar) {
+      avatar.destroy();
+      this.remoteAvatars.delete(userId);
+      console.log(`Removed remote avatar: ${userId}`);
+    }
+  }
+
+  /**
+   * Atualiza posição de um avatar remoto
+   */
+  updateRemoteAvatarPosition(userId, position) {
+    const avatar = this.remoteAvatars.get(userId);
+
+    if (avatar) {
+      avatar.moveToGrid(position.x, position.y, this.pathfinding);
+    }
+  }
+
+  /**
+   * Retorna o gerenciador de telas compartilhadas
+   */
+  getSharedScreenManager() {
+    return this.sharedScreenManager;
+  }
+
+  /**
    * Update loop
    */
   update(time, delta) {
-    // Atualizar avatar
+    // Atualizar avatar local
     if (this.player) {
       this.player.update(time, delta);
+    }
+
+    // Atualizar avatares remotos
+    if (this.remoteAvatars) {
+      this.remoteAvatars.forEach(avatar => {
+        avatar.update(time, delta);
+      });
     }
 
     // Atualizar debug
     if (this.debugText) {
       const playerPos = this.player.getGridPosition();
+      const availableScreens = this.sharedScreenManager?.getAvailableScreenCount() || 0;
       this.debugText.setText([
         `FPS: ${Math.round(this.game.loop.actualFps)}`,
         `Player: (${playerPos.x}, ${playerPos.y})`,
         `Objects: ${this.placedObjects.length}`,
+        `Remote Users: ${this.remoteAvatars?.size || 0}`,
+        `Available Screens: ${availableScreens}`,
         `Edit Mode: ${this.editMode ? 'ON' : 'OFF'}`,
         `Press E: Toggle Edit`,
         `Press G: Toggle Grid`,
