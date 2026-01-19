@@ -20,6 +20,8 @@ export class NetworkManager {
       onUserEmote: null,
       onWebRTCSignal: null,
       onWhiteboardAction: null,
+      onKnock: null,
+      onPrivateMessage: null,
       onConnected: null,
       onDisconnected: null,
     };
@@ -131,6 +133,20 @@ export class NetworkManager {
     this.socket.on('whiteboard-action', (action) => {
       if (this.callbacks.onWhiteboardAction) {
         this.callbacks.onWhiteboardAction(action);
+      }
+    });
+
+    // Knock recebido
+    this.socket.on('knock-received', ({ fromUserId, fromUserName }) => {
+      if (this.callbacks.onKnock) {
+        this.callbacks.onKnock(fromUserId, fromUserName);
+      }
+    });
+
+    // Mensagem privada recebida
+    this.socket.on('private-message', ({ fromUserId, fromUserName, message }) => {
+      if (this.callbacks.onPrivateMessage) {
+        this.callbacks.onPrivateMessage(fromUserId, fromUserName, message);
       }
     });
 
@@ -258,6 +274,31 @@ export class NetworkManager {
     this.socket.emit('whiteboard-action', {
       roomId: this.roomId,
       action,
+    });
+  }
+
+  /**
+   * Envia knock/poke para um usuário
+   */
+  sendKnock(targetUserId) {
+    if (!this.socket || !this.connected) return;
+
+    this.socket.emit('send-knock', {
+      roomId: this.roomId,
+      targetUserId,
+    });
+  }
+
+  /**
+   * Envia mensagem privada para um usuário
+   */
+  sendPrivateMessage(targetUserId, message) {
+    if (!this.socket || !this.connected) return;
+
+    this.socket.emit('send-private-message', {
+      roomId: this.roomId,
+      targetUserId,
+      message,
     });
   }
 

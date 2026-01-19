@@ -14,6 +14,8 @@ import StatusSelector from '../ui/StatusSelector';
 import EmoteSelector from '../ui/EmoteSelector';
 import Whiteboard from '../ui/Whiteboard';
 import NearbyUsersList from '../ui/NearbyUsersList';
+import UserActionsMenu from '../ui/UserActionsMenu';
+import useFollowMode from '../hooks/useFollowMode';
 import { useToast } from '../ui/Toast';
 import { DEFAULT_AUDIO_ZONES, findZoneAtPosition } from '../config/audioZones';
 import { DEFAULT_STATUS, STATUS_CONFIG } from '../config/userStatus';
@@ -36,6 +38,8 @@ export function VoiceManager({
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [screenStream, setScreenStream] = useState(null);
   const [isWhiteboardOpen, setIsWhiteboardOpen] = useState(false);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [menuPosition, setMenuPosition] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
   const [currentZone, setCurrentZone] = useState(null);
   const [settings, setSettings] = useState(() => loadSettings());
@@ -49,6 +53,9 @@ export function VoiceManager({
 
   // Auto-away detection
   useAutoAway(userStatus, setUserStatus);
+
+  // Follow mode
+  const { followingUserId, isFollowing, startFollowing, stopFollowing } = useFollowMode(phaserGame, allUsers);
 
   // WebRTC hook
   const {
@@ -113,6 +120,8 @@ export function VoiceManager({
     manager.on('userStatusChanged', handleUserStatusChanged);
     manager.on('userEmote', handleUserEmote);
     manager.on('webRTCSignal', handleWebRTCSignal);
+    manager.on('knock', handleKnock);
+    manager.on('privateMessage', handlePrivateMessage);
 
     return () => {
       manager.disconnect();
@@ -613,12 +622,97 @@ export function VoiceManager({
   }, [phaserGame]);
 
   /**
+   * Handle knock recebido
+   */
+  const handleKnock = useCallback((fromUserId, fromUserName) => {
+    // Mostrar animação no avatar
+    if (phaserGame) {
+      const scene = phaserGame.scene.scenes[0];
+      if (scene && scene.player) {
+        // Animar avatar pulsando
+        scene.tweens.add({
+          targets: scene.player,
+          scaleX: 1.2,
+          scaleY: 1.2,
+          duration: 150,
+          yoyo: true,
+          repeat: 2,
+        });
+      }
+    }
+
+    // Notificação
+    toast.info(`👋 ${fromUserName} está chamando você!`, { duration: 3000 });
+  }, [phaserGame, toast]);
+
+  /**
+   * Handle mensagem privada recebida
+   */
+  const handlePrivateMessage = useCallback((fromUserId, fromUserName, message) => {
+    toast.success(`💬 ${fromUserName}: ${message}`, { duration: 5000 });
+  }, [toast]);
+
+  /**
    * Handle clique em usuário na lista de próximos
    */
-  const handleNearbyUserClick = useCallback((user) => {
-    console.log('Clicked nearby user:', user);
-    // TODO: Implementar ações (teleport, perfil, etc)
+  const handleNearbyUserClick = useCallback((user, event) => {
+    setSelectedUser(user);
+    setMenuPosition({
+      x: event?.clientX || window.innerWidth / 2,
+      y: event?.clientY || window.innerHeight / 2,
+    });
   }, []);
+
+  /**
+   * Handle ação do menu de usuário
+   */
+  const handleUserAction = useCallback((actionId, user) => {
+    if (!phaserGame || !networkManager) return;
+
+    const scene = phaserGame.scene.scenes[0];
+    if (!scene) return;
+
+    switch (actionId) {
+      case 'teleport':
+        // Teleportar para o usuário
+        if (user.position && scene.player) {
+          const targetX = user.position.x + (Math.random() > 0.5 ? 1 : -1);
+          const targetY = user.position.y + (Math.random() > 0.5 ? 1 : -1);
+          scene.player.moveToGrid(targetX, targetY, scene.pathfinding);
+          toast.success(`🚀 Teleportado para ${user.name}`, { duration: 2000 });
+        }
+        break;
+
+      case 'follow':
+        // Seguir usuário
+        startFollowing(user.id);
+        toast.success(`👣 Seguindo ${user.name}`, { duration: 2000 });
+        break;
+
+      case 'knock':
+        // Enviar knock
+        networkManager.sendKnock(user.id);
+        toast.info(`👋 Chamando ${user.name}...`, { duration: 2000 });
+        break;
+
+      case 'chat':
+        // Abrir chat privado (simulado com prompt por enquanto)
+        const message = window.prompt(`Enviar mensagem para ${user.name}:`);
+        if (message) {
+          networkManager.sendPrivateMessage(user.id, message);
+          toast.success(`💬 Mensagem enviada para ${user.name}`, { duration: 2000 });
+        }
+        break;
+
+      case 'profile':
+        // Ver perfil (será implementado na Feature 6)
+        toast.info('Perfil em breve!', { duration: 2000 });
+        break;
+
+      default:
+        break;
+    }
+  }, [phaserGame, networkManager, startFollowing, toast]);
 
   return (
     <>
@@ -755,6 +849,51 @@ export function VoiceManager({
           }))}
           onUserClick={handleNearbyUserClick}
         />
+      )}
+
+      {/* User Actions Menu */}
+      {selectedUser && (
+        <UserActionsMenu
+          user={selectedUser}
+          position={menuPosition}
+          onClose={() => setSelectedUser(null)}
+          onAction={handleUserAction}
+        />
+      )}
+
+      {/* Follow Mode Indicator */}
+      {isFollowing && (
+        <div style={{
+          position: 'fixed',
+          top: '100px',
+          right: '20px',
+          background: 'rgba(16, 185, 129, 0.9)',
+          color: 'white',
+          padding: '12px 20px',
+          borderRadius: '8px',
+          zIndex: 1000,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2)',
+        }}>
+          <span>👣 Seguindo usuário</span>
+          <button
+            onClick={stopFollowing}
+            style={{
+              background: 'rgba(255, 255, 255, 0.2)',
+              border: 'none',
+              color: 'white',
+              padding: '4px 12px',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '12px',
+              fontWeight: 'bold',
+            }}
+          >
+            Parar
+          </button>
+        </div>
       )}
     </>
   );

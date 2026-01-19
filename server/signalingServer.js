@@ -238,6 +238,46 @@ function startServer() {
     });
 
     /**
+     * Knock/Poke
+     */
+    socket.on('send-knock', ({ roomId, targetUserId }) => {
+      const room = rooms.get(roomId);
+      if (!room) return;
+
+      const fromUser = room.users.get(socket.id);
+      if (!fromUser) return;
+
+      // Enviar knock para o usuário específico
+      io.to(targetUserId).emit('knock-received', {
+        fromUserId: socket.id,
+        fromUserName: fromUser.name,
+      });
+
+      console.log(`👋 ${fromUser.name} knocked ${targetUserId}`);
+    });
+
+    /**
+     * Mensagem privada
+     */
+    socket.on('send-private-message', ({ roomId, targetUserId, message }) => {
+      const room = rooms.get(roomId);
+      if (!room) return;
+
+      const fromUser = room.users.get(socket.id);
+      if (!fromUser) return;
+
+      // Enviar mensagem para o usuário específico
+      io.to(targetUserId).emit('private-message', {
+        fromUserId: socket.id,
+        fromUserName: fromUser.name,
+        message,
+        timestamp: Date.now(),
+      });
+
+      console.log(`💬 ${fromUser.name} sent private message to ${targetUserId}`);
+    });
+
+    /**
      * Desconexão
      */
     socket.on('disconnect', () => {

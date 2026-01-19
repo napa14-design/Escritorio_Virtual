@@ -24,7 +24,7 @@ export function NearbyUsersList({ nearbyUsers, onUserClick }) {
             <div
               key={user.id}
               className="nearby-user-item"
-              onClick={() => onUserClick && onUserClick(user)}
+              onClick={(e) => onUserClick && onUserClick(user, e)}
             >
               <div className="user-info">
                 <div className="user-avatar-mini">
