@@ -227,6 +227,17 @@ function startServer() {
     });
 
     /**
+     * Ação do whiteboard
+     */
+    socket.on('whiteboard-action', ({ roomId, action }) => {
+      const room = rooms.get(roomId);
+      if (!room) return;
+
+      // Broadcast ação para outros usuários na sala
+      socket.to(roomId).emit('whiteboard-action', action);
+    });
+
+    /**
      * Desconexão
      */
     socket.on('disconnect', () => {

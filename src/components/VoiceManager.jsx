@@ -12,6 +12,7 @@ import SettingsModal from '../ui/SettingsModal';
 import ScreenSharePreview from '../ui/ScreenSharePreview';
 import StatusSelector from '../ui/StatusSelector';
 import EmoteSelector from '../ui/EmoteSelector';
+import Whiteboard from '../ui/Whiteboard';
 import { useToast } from '../ui/Toast';
 import { DEFAULT_AUDIO_ZONES, findZoneAtPosition } from '../config/audioZones';
 import { DEFAULT_STATUS, STATUS_CONFIG } from '../config/userStatus';
@@ -33,6 +34,7 @@ export function VoiceManager({
   const [isVideoEnabled, setIsVideoEnabled] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [screenStream, setScreenStream] = useState(null);
+  const [isWhiteboardOpen, setIsWhiteboardOpen] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [currentZone, setCurrentZone] = useState(null);
   const [settings, setSettings] = useState(() => loadSettings());
@@ -61,6 +63,7 @@ export function VoiceManager({
     toggleVideo: webRTCToggleVideo,
     startScreenShare,
     stopScreenShare,
+    getRemoteStream,
   } = useWebRTC(networkManager?.getSocket(), localUserId);
 
   // Voice Activity Detection
@@ -301,7 +304,32 @@ export function VoiceManager({
     setAllUsers(prev => prev.map(u =>
       u.id === userId ? { ...u, mediaState } : u
     ));
-  }, []);
+
+    // Gerenciar compartilhamento de tela em SharedScreens
+    if (phaserGame && mediaState.isScreenSharing !== undefined) {
+      const scene = phaserGame.scene.scenes[0];
+      const screenManager = scene?.getSharedScreenManager();
+
+      if (screenManager) {
+        if (mediaState.isScreenSharing) {
+          // Usuário começou a compartilhar - tentar obter stream
+          const stream = getRemoteStream(userId);
+          if (stream) {
+            const user = allUsers.find(u => u.id === userId);
+            const userName = user?.name || 'Unknown User';
+            screenManager.assignStreamToScreen(userId, userName, stream);
+            console.log(`Assigned screen share from ${userName} to shared screen`);
+          } else {
+            console.warn(`No remote stream available for ${userId}`);
+          }
+        } else {
+          // Usuário parou de compartilhar
+          screenManager.removeUserStream(userId);
+          console.log(`Removed screen share from user ${userId}`);
+        }
+      }
+    }
+  }, [phaserGame, getRemoteStream, allUsers]);
 
   /**
    * Handle customização mudou
@@ -572,6 +600,27 @@ export function VoiceManager({
             onEmoteSelect={handleEmoteSelect}
             disabled={!isConnected}
           />
+          <button
+            onClick={() => setIsWhiteboardOpen(true)}
+            disabled={!isConnected}
+            style={{
+              width: '48px',
+              height: '48px',
+              borderRadius: '50%',
+              border: '2px solid #e5e7eb',
+              background: isConnected ? '#ffffff' : '#f3f4f6',
+              cursor: isConnected ? 'pointer' : 'not-allowed',
+              fontSize: '24px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'all 0.2s',
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+            }}
+            title="Open Whiteboard"
+          >
+            📝
+          </button>
         </div>
       )}
 
@@ -631,6 +680,13 @@ export function VoiceManager({
         currentSettings={settings}
         localStream={localStream}
         testAudioLevel={audioLevel}
+      />
+
+      {/* Collaborative Whiteboard */}
+      <Whiteboard
+        isOpen={isWhiteboardOpen}
+        onClose={() => setIsWhiteboardOpen(false)}
+        networkManager={networkManager}
       />
     </>
   );

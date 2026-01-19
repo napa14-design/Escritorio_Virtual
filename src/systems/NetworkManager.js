@@ -19,6 +19,7 @@ export class NetworkManager {
       onUserStatusChanged: null,
       onUserEmote: null,
       onWebRTCSignal: null,
+      onWhiteboardAction: null,
       onConnected: null,
       onDisconnected: null,
     };
@@ -123,6 +124,13 @@ export class NetworkManager {
     this.socket.on('webrtc-signal', ({ senderId, signal }) => {
       if (this.callbacks.onWebRTCSignal) {
         this.callbacks.onWebRTCSignal(senderId, signal);
+      }
+    });
+
+    // Ação do whiteboard
+    this.socket.on('whiteboard-action', (action) => {
+      if (this.callbacks.onWhiteboardAction) {
+        this.callbacks.onWhiteboardAction(action);
       }
     });
 
@@ -238,6 +246,18 @@ export class NetworkManager {
     this.socket.emit('send-emote', {
       roomId: this.roomId,
       emote,
+    });
+  }
+
+  /**
+   * Envia ação do whiteboard
+   */
+  sendWhiteboardAction(action) {
+    if (!this.socket || !this.connected) return;
+
+    this.socket.emit('whiteboard-action', {
+      roomId: this.roomId,
+      action,
     });
   }
 

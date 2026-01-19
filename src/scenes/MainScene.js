@@ -6,6 +6,7 @@ import Avatar from '../entities/Avatar';
 import IsometricObject from '../entities/IsometricObject';
 import { getObjectById } from '../config/objectsLibrary';
 import { DEFAULT_AUDIO_ZONES } from '../config/audioZones';
+import { SharedScreenManager } from '../systems/SharedScreenManager';
 
 /**
  * Cena principal do escritório virtual isométrico
@@ -27,6 +28,7 @@ export class MainScene extends Phaser.Scene {
     this.pathfinding = new Pathfinding();
     this.placedObjects = [];
     this.selectedObject = null;
+    this.sharedScreenManager = new SharedScreenManager(this);
 
     // Estado
     this.editMode = false;
@@ -38,6 +40,7 @@ export class MainScene extends Phaser.Scene {
     // Criar ambiente
     this.createFloor();
     this.createAudioZones();
+    this.createSharedScreens();
     this.createGrid();
 
     // Criar avatar do jogador
@@ -162,6 +165,32 @@ export class MainScene extends Phaser.Scene {
       this.audioZonesContainer.add(graphics);
       this.audioZonesContainer.add(label);
     });
+  }
+
+  /**
+   * Cria telas compartilhadas no escritório
+   */
+  createSharedScreens() {
+    // Adicionar 2 telas grandes nas "paredes" do escritório
+    // Tela 1: No canto superior esquerdo
+    this.sharedScreenManager.addScreen(2, 2, {
+      width: 3,
+      height: 2,
+      name: 'Screen 1',
+      frameColor: 0x2d3748,
+      screenColor: 0x1a202c,
+    });
+
+    // Tela 2: No canto superior direito
+    this.sharedScreenManager.addScreen(GRID_CONFIG.WIDTH - 5, 2, {
+      width: 3,
+      height: 2,
+      name: 'Screen 2',
+      frameColor: 0x2d3748,
+      screenColor: 0x1a202c,
+    });
+
+    console.log('Created shared screens:', this.sharedScreenManager.getAllScreens().length);
   }
 
   /**
@@ -575,6 +604,13 @@ export class MainScene extends Phaser.Scene {
   }
 
   /**
+   * Retorna o gerenciador de telas compartilhadas
+   */
+  getSharedScreenManager() {
+    return this.sharedScreenManager;
+  }
+
+  /**
    * Update loop
    */
   update(time, delta) {
@@ -593,11 +629,13 @@ export class MainScene extends Phaser.Scene {
     // Atualizar debug
     if (this.debugText) {
       const playerPos = this.player.getGridPosition();
+      const availableScreens = this.sharedScreenManager?.getAvailableScreenCount() || 0;
       this.debugText.setText([
         `FPS: ${Math.round(this.game.loop.actualFps)}`,
         `Player: (${playerPos.x}, ${playerPos.y})`,
         `Objects: ${this.placedObjects.length}`,
         `Remote Users: ${this.remoteAvatars?.size || 0}`,
+        `Available Screens: ${availableScreens}`,
         `Edit Mode: ${this.editMode ? 'ON' : 'OFF'}`,
         `Press E: Toggle Edit`,
         `Press G: Toggle Grid`,

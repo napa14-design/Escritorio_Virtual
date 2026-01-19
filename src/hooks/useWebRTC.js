@@ -322,6 +322,14 @@ export function useWebRTC(socket, localUserId) {
   }, []);
 
   /**
+   * Obtém stream remoto de um usuário
+   */
+  const getRemoteStream = useCallback((userId) => {
+    const connection = connectionsRef.current.get(userId);
+    return connection?.remoteStream || null;
+  }, []);
+
+  /**
    * Cleanup ao desmontar
    */
   useEffect(() => {
@@ -353,6 +361,7 @@ export function useWebRTC(socket, localUserId) {
     toggleVideo,
     startScreenShare,
     stopScreenShare,
+    getRemoteStream,
   };
 }
 
