@@ -37,6 +37,7 @@ function createUser(userId, userData) {
     name: userData.name || 'Player',
     position: userData.position || { x: 10, y: 10 },
     customization: userData.customization || null,
+    status: userData.status || 'available',
     mediaState: {
       isMuted: true,
       isVideoEnabled: false,
@@ -157,6 +158,25 @@ function startServer() {
       socket.to(roomId).emit('user-customization-changed', {
         userId: socket.id,
         customization,
+      });
+    });
+
+    /**
+     * Atualizar status do usuário
+     */
+    socket.on('update-status', ({ roomId, status }) => {
+      const room = rooms.get(roomId);
+      if (!room) return;
+
+      const user = room.users.get(socket.id);
+      if (!user) return;
+
+      user.status = status;
+
+      // Broadcast para outros usuários na sala
+      socket.to(roomId).emit('user-status-changed', {
+        userId: socket.id,
+        status,
       });
     });
 

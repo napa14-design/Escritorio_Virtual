@@ -85,6 +85,12 @@ export class Avatar extends Phaser.GameObjects.Container {
     this.speakingIndicator = this.scene.add.graphics();
     this.speakingIndicator.setVisible(false);
     this.add(this.speakingIndicator);
+
+    // Indicador de status (círculo colorido)
+    this.statusIndicator = this.scene.add.graphics();
+    this.statusIndicator.setVisible(false);
+    this.add(this.statusIndicator);
+    this.currentStatusColor = 0x10b981; // Verde por padrão (disponível)
   }
 
   /**
@@ -130,6 +136,19 @@ export class Avatar extends Phaser.GameObjects.Container {
       this.speakingIndicator.lineStyle(3, 0x10b981, 1);
       this.speakingIndicator.strokeCircle(0, -8, 25);
     }
+  }
+
+  /**
+   * Define o status do usuário (cor do indicador)
+   */
+  setStatus(statusColor) {
+    this.currentStatusColor = statusColor;
+    this.statusIndicator.setVisible(true);
+
+    // Desenhar círculo de status ao lado do nome
+    this.statusIndicator.clear();
+    this.statusIndicator.fillStyle(statusColor, 1);
+    this.statusIndicator.fillCircle(-30, -40, 5);
   }
 
   /**

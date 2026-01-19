@@ -16,6 +16,7 @@ export class NetworkManager {
       onUserMoved: null,
       onUserMediaChanged: null,
       onUserCustomizationChanged: null,
+      onUserStatusChanged: null,
       onWebRTCSignal: null,
       onConnected: null,
       onDisconnected: null,
@@ -100,6 +101,13 @@ export class NetworkManager {
     this.socket.on('user-customization-changed', ({ userId, customization }) => {
       if (this.callbacks.onUserCustomizationChanged) {
         this.callbacks.onUserCustomizationChanged(userId, customization);
+      }
+    });
+
+    // Status mudou
+    this.socket.on('user-status-changed', ({ userId, status }) => {
+      if (this.callbacks.onUserStatusChanged) {
+        this.callbacks.onUserStatusChanged(userId, status);
       }
     });
 
@@ -198,6 +206,18 @@ export class NetworkManager {
     this.socket.emit('update-customization', {
       roomId: this.roomId,
       customization,
+    });
+  }
+
+  /**
+   * Envia atualização de status
+   */
+  updateStatus(status) {
+    if (!this.socket || !this.connected) return;
+
+    this.socket.emit('update-status', {
+      roomId: this.roomId,
+      status,
     });
   }
 

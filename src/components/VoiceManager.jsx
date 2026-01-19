@@ -2,14 +2,17 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import useWebRTC from '../hooks/useWebRTC';
 import useVoiceActivityDetection, { useRemoteVoiceActivityDetection } from '../hooks/useVoiceActivityDetection';
 import useProximityVoice from '../hooks/useProximityVoice';
+import useAutoAway from '../hooks/useAutoAway';
 import NetworkManager from '../systems/NetworkManager';
 import AudioControls from '../ui/AudioControls';
 import ProximityVideoPanel from '../ui/ProximityVideoPanel';
 import ChatManager from './ChatManager';
 import SettingsModal from '../ui/SettingsModal';
 import ScreenSharePreview from '../ui/ScreenSharePreview';
+import StatusSelector from '../ui/StatusSelector';
 import { useToast } from '../ui/Toast';
 import { DEFAULT_AUDIO_ZONES, findZoneAtPosition } from '../config/audioZones';
+import { DEFAULT_STATUS, STATUS_CONFIG } from '../config/userStatus';
 import { loadSettings, saveSettings, settingsToMediaConstraints, settingsToVADConfig } from '../utils/settingsStorage';
 
 /**
@@ -31,11 +34,15 @@ export function VoiceManager({
   const [currentZone, setCurrentZone] = useState(null);
   const [settings, setSettings] = useState(() => loadSettings());
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [userStatus, setUserStatus] = useState(DEFAULT_STATUS);
 
   const networkRef = useRef(null);
   const remoteAvatarsRef = useRef(new Map());
   const toast = useToast();
   const audioZones = DEFAULT_AUDIO_ZONES;
+
+  // Auto-away detection
+  useAutoAway(userStatus, setUserStatus);
 
   // WebRTC hook
   const {
@@ -96,6 +103,7 @@ export function VoiceManager({
     manager.on('userMoved', handleUserMoved);
     manager.on('userMediaChanged', handleUserMediaChanged);
     manager.on('userCustomizationChanged', handleUserCustomizationChanged);
+    manager.on('userStatusChanged', handleUserStatusChanged);
     manager.on('webRTCSignal', handleWebRTCSignal);
 
     return () => {
@@ -315,6 +323,30 @@ export function VoiceManager({
   }, [phaserGame]);
 
   /**
+   * Handle status mudou
+   */
+  const handleUserStatusChanged = useCallback((userId, status) => {
+    console.log('User status changed:', userId, status);
+
+    // Atualizar indicador no avatar remoto
+    if (phaserGame) {
+      const scene = phaserGame.scene.scenes[0];
+      if (scene) {
+        const avatar = remoteAvatarsRef.current.get(userId);
+        if (avatar && STATUS_CONFIG[status]) {
+          const statusColor = Phaser.Display.Color.HexStringToColor(STATUS_CONFIG[status].color).color;
+          avatar.setStatus(statusColor);
+        }
+      }
+    }
+
+    // Atualizar estado
+    setAllUsers(prev => prev.map(u =>
+      u.id === userId ? { ...u, status } : u
+    ));
+  }, [phaserGame]);
+
+  /**
    * Handle sinal WebRTC
    */
   const handleWebRTCSignal = useCallback((senderId, signal) => {
@@ -427,6 +459,32 @@ export function VoiceManager({
     }
   }, [localStream, isVideoEnabled, initializeMedia, toast]);
 
+  /**
+   * Handle mudança de status
+   */
+  const handleStatusChange = useCallback((newStatus) => {
+    setUserStatus(newStatus);
+
+    // Atualizar indicador no avatar local
+    if (phaserGame) {
+      const scene = phaserGame.scene.scenes[0];
+      if (scene?.player) {
+        const statusColor = Phaser.Display.Color.HexStringToColor(STATUS_CONFIG[newStatus].color).color;
+        scene.player.setStatus(statusColor);
+      }
+    }
+
+    // Sincronizar com servidor
+    if (networkManager) {
+      networkManager.updateStatus(newStatus);
+    }
+
+    // Notificação
+    toast.info(`Status: ${STATUS_CONFIG[newStatus].label}`, {
+      duration: 2000,
+    });
+  }, [phaserGame, networkManager, toast]);
+
   const nearbyUsers = getNearbyUsers();
   const connectedUsers = allUsers.length;
 
@@ -446,6 +504,21 @@ export function VoiceManager({
           onToggleScreenShare={handleToggleScreenShare}
           onOpenSettings={handleOpenSettings}
         />
+      )}
+
+      {/* Status Selector */}
+      {isConnected && (
+        <div style={{
+          position: 'fixed',
+          top: '20px',
+          right: '20px',
+          zIndex: 1000,
+        }}>
+          <StatusSelector
+            currentStatus={userStatus}
+            onStatusChange={handleStatusChange}
+          />
+        </div>
       )}
 
       {/* Proximity Video Panel */}
