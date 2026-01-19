@@ -15,6 +15,7 @@ import EmoteSelector from '../ui/EmoteSelector';
 import Whiteboard from '../ui/Whiteboard';
 import NearbyUsersList from '../ui/NearbyUsersList';
 import UserActionsMenu from '../ui/UserActionsMenu';
+import UserProfileModal from '../ui/UserProfileModal';
 import useFollowMode from '../hooks/useFollowMode';
 import { useToast } from '../ui/Toast';
 import { DEFAULT_AUDIO_ZONES, findZoneAtPosition } from '../config/audioZones';
@@ -40,6 +41,7 @@ export function VoiceManager({
   const [isWhiteboardOpen, setIsWhiteboardOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
   const [menuPosition, setMenuPosition] = useState(null);
+  const [profileUser, setProfileUser] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
   const [currentZone, setCurrentZone] = useState(null);
   const [settings, setSettings] = useState(() => loadSettings());
@@ -705,8 +707,8 @@ export function VoiceManager({
         break;
 
       case 'profile':
-        // Ver perfil (será implementado na Feature 6)
-        toast.info('Perfil em breve!', { duration: 2000 });
+        // Ver perfil
+        setProfileUser(user);
         break;
 
       default:
@@ -858,6 +860,41 @@ export function VoiceManager({
           position={menuPosition}
           onClose={() => setSelectedUser(null)}
           onAction={handleUserAction}
+        />
+      )}
+
+      {/* User Profile Modal */}
+      {profileUser && (
+        <UserProfileModal
+          user={profileUser}
+          isOwn={profileUser.id === localUserId}
+          onClose={() => setProfileUser(null)}
+          onUpdate={(data) => {
+            if (data.statusMessage !== undefined && networkManager) {
+              networkManager.updateStatusMessage(data.statusMessage);
+              toast.success('Status message updated!', { duration: 2000 });
+            }
+          }}
+          onSendMessage={(user) => {
+            const message = window.prompt(`Send message to ${user.name}:`);
+            if (message && networkManager) {
+              networkManager.sendPrivateMessage(user.id, message);
+              toast.success(`Message sent to ${user.name}`, { duration: 2000 });
+            }
+            setProfileUser(null);
+          }}
+          onTeleport={(user) => {
+            if (phaserGame) {
+              const scene = phaserGame.scene.scenes[0];
+              if (scene && scene.player && user.position) {
+                const targetX = user.position.x + 1;
+                const targetY = user.position.y + 1;
+                scene.player.moveToGrid(targetX, targetY, scene.pathfinding);
+                toast.success(`Teleported to ${user.name}`, { duration: 2000 });
+              }
+            }
+            setProfileUser(null);
+          }}
         />
       )}
 

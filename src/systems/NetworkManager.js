@@ -254,6 +254,18 @@ export class NetworkManager {
   }
 
   /**
+   * Envia atualização de mensagem de status
+   */
+  updateStatusMessage(statusMessage) {
+    if (!this.socket || !this.connected) return;
+
+    this.socket.emit('update-status-message', {
+      roomId: this.roomId,
+      statusMessage,
+    });
+  }
+
+  /**
    * Envia emote
    */
   sendEmote(emote) {
