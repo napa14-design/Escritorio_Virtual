@@ -16,6 +16,8 @@ import Whiteboard from '../ui/Whiteboard';
 import NearbyUsersList from '../ui/NearbyUsersList';
 import UserActionsMenu from '../ui/UserActionsMenu';
 import UserProfileModal from '../ui/UserProfileModal';
+import RoomSelector from '../ui/RoomSelector';
+import CreateRoomModal from '../ui/CreateRoomModal';
 import useFollowMode from '../hooks/useFollowMode';
 import { useToast } from '../ui/Toast';
 import { DEFAULT_AUDIO_ZONES, findZoneAtPosition } from '../config/audioZones';
@@ -47,6 +49,10 @@ export function VoiceManager({
   const [settings, setSettings] = useState(() => loadSettings());
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [userStatus, setUserStatus] = useState(DEFAULT_STATUS);
+  const [availableRooms, setAvailableRooms] = useState([]);
+  const [currentRoom, setCurrentRoom] = useState('default-room');
+  const [isRoomSelectorOpen, setIsRoomSelectorOpen] = useState(false);
+  const [isCreateRoomOpen, setIsCreateRoomOpen] = useState(false);
 
   const networkRef = useRef(null);
   const remoteAvatarsRef = useRef(new Map());
@@ -716,6 +722,97 @@ export function VoiceManager({
     }
   }, [phaserGame, networkManager, startFollowing, toast]);
 
+  /**
+   * Carregar lista de salas
+   */
+  const loadRooms = useCallback(async () => {
+    if (!networkManager) return;
+
+    try {
+      const rooms = await networkManager.getRooms();
+      setAvailableRooms(rooms);
+    } catch (error) {
+      console.error('Error loading rooms:', error);
+    }
+  }, [networkManager]);
+
+  /**
+   * Abrir seletor de salas
+   */
+  const handleOpenRoomSelector = useCallback(() => {
+    loadRooms();
+    setIsRoomSelectorOpen(true);
+  }, [loadRooms]);
+
+  /**
+   * Selecionar sala
+   */
+  const handleSelectRoom = useCallback(async (room) => {
+    if (!networkManager) return;
+
+    try {
+      // Se sala privada, pedir senha
+      if (room.type === 'private') {
+        const password = window.prompt(`Enter password for ${room.name}:`);
+        if (!password) return;
+
+        await networkManager.switchRoom(room.id, password);
+      } else {
+        await networkManager.switchRoom(room.id);
+      }
+
+      setCurrentRoom(room.id);
+      setIsRoomSelectorOpen(false);
+      toast.success(`Switched to ${room.name}`, { duration: 2000 });
+
+      // Recarregar cena do Phaser
+      if (phaserGame) {
+        const scene = phaserGame.scene.scenes[0];
+        if (scene) {
+          scene.scene.restart();
+        }
+      }
+    } catch (error) {
+      toast.error(error.message || 'Failed to switch room', { duration: 3000 });
+    }
+  }, [networkManager, phaserGame, toast]);
+
+  /**
+   * Criar nova sala
+   */
+  const handleCreateRoom = useCallback(async (roomData) => {
+    if (!networkManager) return;
+
+    try {
+      const roomId = await networkManager.createRoom(roomData);
+      toast.success(`Room "${roomData.name}" created!`, { duration: 2000 });
+      setIsCreateRoomOpen(false);
+
+      // Recarregar lista de salas
+      await loadRooms();
+
+      // Entrar automaticamente na sala criada
+      await networkManager.switchRoom(roomId);
+      setCurrentRoom(roomId);
+    } catch (error) {
+      toast.error('Failed to create room', { duration: 3000 });
+    }
+  }, [networkManager, loadRooms, toast]);
+
+  /**
+   * Carregar salas ao conectar
+   */
+  useEffect(() => {
+    if (isConnected && networkManager) {
+      loadRooms();
+
+      // Listener para novas salas criadas
+      networkManager.getSocket()?.on('room-created', (newRoom) => {
+        setAvailableRooms(prev => [...prev, newRoom]);
+      });
+    }
+  }, [isConnected, networkManager, loadRooms]);
+
   return (
     <>
       {/* Audio Controls */}
@@ -773,6 +870,27 @@ export function VoiceManager({
             title="Open Whiteboard"
           >
             📝
+          </button>
+          <button
+            onClick={handleOpenRoomSelector}
+            disabled={!isConnected}
+            style={{
+              width: '48px',
+              height: '48px',
+              borderRadius: '50%',
+              border: '2px solid #e5e7eb',
+              background: isConnected ? '#ffffff' : '#f3f4f6',
+              cursor: isConnected ? 'pointer' : 'not-allowed',
+              fontSize: '24px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'all 0.2s',
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+            }}
+            title="Rooms"
+          >
+            🚪
           </button>
         </div>
       )}
@@ -931,6 +1049,28 @@ export function VoiceManager({
             Parar
           </button>
         </div>
+      )}
+
+      {/* Room Selector */}
+      {isRoomSelectorOpen && (
+        <RoomSelector
+          rooms={availableRooms}
+          currentRoom={currentRoom}
+          onSelectRoom={handleSelectRoom}
+          onCreateRoom={() => {
+            setIsRoomSelectorOpen(false);
+            setIsCreateRoomOpen(true);
+          }}
+          onClose={() => setIsRoomSelectorOpen(false)}
+        />
+      )}
+
+      {/* Create Room Modal */}
+      {isCreateRoomOpen && (
+        <CreateRoomModal
+          onClose={() => setIsCreateRoomOpen(false)}
+          onCreate={handleCreateRoom}
+        />
       )}
     </>
   );

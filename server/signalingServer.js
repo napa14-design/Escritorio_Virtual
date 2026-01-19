@@ -20,11 +20,17 @@ const rooms = new Map();
 /**
  * Estrutura de uma sala
  */
-function createRoom(roomId) {
+function createRoom(roomId, metadata = {}) {
   return {
     id: roomId,
+    name: metadata.name || roomId,
+    description: metadata.description || '',
+    type: metadata.type || 'public', // public or private
+    password: metadata.password || null,
+    maxUsers: metadata.maxUsers || 50,
     users: new Map(),
     createdAt: Date.now(),
+    createdBy: metadata.createdBy || null,
   };
 }
 
@@ -63,9 +69,93 @@ function startServer() {
 
   console.log('🚀 Signaling Server starting...');
 
+  // Criar sala padrão
+  if (!rooms.has('default-room')) {
+    rooms.set('default-room', createRoom('default-room', {
+      name: 'Main Office',
+      description: 'The main virtual office space',
+      type: 'public',
+      maxUsers: 50,
+    }));
+  }
+
   // Eventos do Socket.io
   io.on('connection', (socket) => {
     console.log(`✅ User connected: ${socket.id}`);
+
+    /**
+     * Listar todas as salas
+     */
+    socket.on('get-rooms', () => {
+      const roomsList = Array.from(rooms.values()).map(room => ({
+        id: room.id,
+        name: room.name,
+        description: room.description,
+        type: room.type,
+        maxUsers: room.maxUsers,
+        userCount: room.users.size,
+        createdAt: room.createdAt,
+      }));
+
+      socket.emit('rooms-list', roomsList);
+    });
+
+    /**
+     * Criar nova sala
+     */
+    socket.on('create-room', ({ roomData }) => {
+      const roomId = `room-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+      const newRoom = createRoom(roomId, {
+        name: roomData.name,
+        description: roomData.description,
+        type: roomData.type,
+        password: roomData.password,
+        maxUsers: roomData.maxUsers,
+        createdBy: socket.id,
+      });
+
+      rooms.set(roomId, newRoom);
+
+      console.log(`🏢 Room created: ${roomData.name} (${roomId})`);
+
+      // Notificar todos sobre nova sala
+      io.emit('room-created', {
+        id: newRoom.id,
+        name: newRoom.name,
+        description: newRoom.description,
+        type: newRoom.type,
+        maxUsers: newRoom.maxUsers,
+        userCount: 0,
+        createdAt: newRoom.createdAt,
+      });
+
+      socket.emit('room-create-success', { roomId });
+    });
+
+    /**
+     * Validar senha e entrar em sala privada
+     */
+    socket.on('join-room-with-password', ({ roomId, password, userData }, callback) => {
+      const room = rooms.get(roomId);
+
+      if (!room) {
+        callback({ success: false, error: 'Room not found' });
+        return;
+      }
+
+      if (room.type === 'private' && room.password !== password) {
+        callback({ success: false, error: 'Incorrect password' });
+        return;
+      }
+
+      if (room.users.size >= room.maxUsers) {
+        callback({ success: false, error: 'Room is full' });
+        return;
+      }
+
+      callback({ success: true });
+    });
 
     /**
      * Usuário entra em uma sala

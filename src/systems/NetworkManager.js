@@ -350,6 +350,93 @@ export class NetworkManager {
   }
 
   /**
+   * Obtém lista de salas disponíveis
+   */
+  getRooms() {
+    return new Promise((resolve) => {
+      if (!this.socket || !this.connected) {
+        resolve([]);
+        return;
+      }
+
+      this.socket.emit('get-rooms');
+
+      const handler = (rooms) => {
+        this.socket.off('rooms-list', handler);
+        resolve(rooms);
+      };
+
+      this.socket.on('rooms-list', handler);
+    });
+  }
+
+  /**
+   * Cria nova sala
+   */
+  createRoom(roomData) {
+    return new Promise((resolve, reject) => {
+      if (!this.socket || !this.connected) {
+        reject(new Error('Not connected'));
+        return;
+      }
+
+      this.socket.emit('create-room', { roomData });
+
+      const successHandler = (data) => {
+        this.socket.off('room-create-success', successHandler);
+        resolve(data.roomId);
+      };
+
+      this.socket.on('room-create-success', successHandler);
+    });
+  }
+
+  /**
+   * Troca de sala
+   */
+  switchRoom(newRoomId, password = null) {
+    return new Promise((resolve, reject) => {
+      if (!this.socket || !this.connected) {
+        reject(new Error('Not connected'));
+        return;
+      }
+
+      // Se tem senha, validar primeiro
+      if (password) {
+        this.socket.emit('join-room-with-password', {
+          roomId: newRoomId,
+          password,
+          userData: {},
+        }, (response) => {
+          if (!response.success) {
+            reject(new Error(response.error));
+            return;
+          }
+
+          // Senha válida, trocar de sala
+          this.leaveRoom();
+          this.roomId = newRoomId;
+          this.joinRoom(newRoomId, {});
+          resolve();
+        });
+      } else {
+        // Sala pública, trocar direto
+        this.leaveRoom();
+        this.roomId = newRoomId;
+        this.joinRoom(newRoomId, {});
+        resolve();
+      }
+    });
+  }
+
+  /**
+   * Retorna ID da sala atual
+   */
+  getCurrentRoomId() {
+    return this.roomId;
+  }
+
+  /**
    * Desconecta do servidor
    */
   disconnect() {
