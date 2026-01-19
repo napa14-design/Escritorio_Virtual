@@ -36,6 +36,7 @@ function createUser(userId, userData) {
     id: userId,
     name: userData.name || 'Player',
     position: userData.position || { x: 10, y: 10 },
+    customization: userData.customization || null,
     mediaState: {
       isMuted: true,
       isVideoEnabled: false,
@@ -137,6 +138,25 @@ function startServer() {
       socket.to(roomId).emit('user-media-changed', {
         userId: socket.id,
         mediaState: user.mediaState,
+      });
+    });
+
+    /**
+     * Atualizar customização do avatar
+     */
+    socket.on('update-customization', ({ roomId, customization }) => {
+      const room = rooms.get(roomId);
+      if (!room) return;
+
+      const user = room.users.get(socket.id);
+      if (!user) return;
+
+      user.customization = customization;
+
+      // Broadcast para outros usuários na sala
+      socket.to(roomId).emit('user-customization-changed', {
+        userId: socket.id,
+        customization,
       });
     });
 

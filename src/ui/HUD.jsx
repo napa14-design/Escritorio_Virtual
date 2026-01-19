@@ -1,7 +1,15 @@
 import React from 'react';
 import './HUD.css';
 
-const HUD = ({ editMode, onToggleEditMode, onToggleSidebar, selectedObject, playerName }) => {
+const HUD = ({
+  editMode,
+  onToggleEditMode,
+  onToggleSidebar,
+  selectedObject,
+  playerName,
+  onOpenAvatarCustomization,
+  onOpenSettings,
+}) => {
   return (
     <div className="hud-container">
       {/* Top Bar */}
@@ -41,7 +49,7 @@ const HUD = ({ editMode, onToggleEditMode, onToggleSidebar, selectedObject, play
 
         <button
           className="tool-btn"
-          onClick={() => {}}
+          onClick={onOpenAvatarCustomization}
           title="Avatar Customization"
         >
           <span className="tool-icon">👕</span>
@@ -50,7 +58,7 @@ const HUD = ({ editMode, onToggleEditMode, onToggleSidebar, selectedObject, play
 
         <button
           className="tool-btn"
-          onClick={() => {}}
+          onClick={onOpenSettings}
           title="Settings"
         >
           <span className="tool-icon">⚙️</span>

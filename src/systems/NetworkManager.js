@@ -15,6 +15,7 @@ export class NetworkManager {
       onUserLeft: null,
       onUserMoved: null,
       onUserMediaChanged: null,
+      onUserCustomizationChanged: null,
       onWebRTCSignal: null,
       onConnected: null,
       onDisconnected: null,
@@ -92,6 +93,13 @@ export class NetworkManager {
     this.socket.on('user-media-changed', ({ userId, mediaState }) => {
       if (this.callbacks.onUserMediaChanged) {
         this.callbacks.onUserMediaChanged(userId, mediaState);
+      }
+    });
+
+    // Customização mudou
+    this.socket.on('user-customization-changed', ({ userId, customization }) => {
+      if (this.callbacks.onUserCustomizationChanged) {
+        this.callbacks.onUserCustomizationChanged(userId, customization);
       }
     });
 
@@ -178,6 +186,18 @@ export class NetworkManager {
     this.socket.emit('update-media', {
       roomId: this.roomId,
       mediaState,
+    });
+  }
+
+  /**
+   * Envia atualização de customização de avatar
+   */
+  updateCustomization(customization) {
+    if (!this.socket || !this.connected) return;
+
+    this.socket.emit('update-customization', {
+      roomId: this.roomId,
+      customization,
     });
   }
 

@@ -19,6 +19,7 @@ export class MainScene extends Phaser.Scene {
     // Dados iniciais
     this.playerName = data.playerName || 'Player';
     this.roomData = data.roomData || null;
+    this.avatarCustomization = data.avatarCustomization || null;
   }
 
   create() {
@@ -197,7 +198,7 @@ export class MainScene extends Phaser.Scene {
     const startX = Math.floor(GRID_CONFIG.WIDTH / 2);
     const startY = Math.floor(GRID_CONFIG.HEIGHT / 2);
 
-    this.player = new Avatar(this, startX, startY);
+    this.player = new Avatar(this, startX, startY, this.avatarCustomization);
     this.player.setName(this.playerName);
 
     // Mapa de avatares remotos

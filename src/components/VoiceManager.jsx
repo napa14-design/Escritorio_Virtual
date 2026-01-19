@@ -76,6 +76,7 @@ export function VoiceManager({
     manager.connect({
       name: currentUser?.name || 'Player',
       position: currentUser?.position || { x: 10, y: 10 },
+      customization: currentUser?.customization || null,
     }).then(() => {
       const userId = manager.getLocalUserId();
       console.log('Connected to server with ID:', userId);
@@ -90,6 +91,7 @@ export function VoiceManager({
     manager.on('userLeft', handleUserLeft);
     manager.on('userMoved', handleUserMoved);
     manager.on('userMediaChanged', handleUserMediaChanged);
+    manager.on('userCustomizationChanged', handleUserCustomizationChanged);
     manager.on('webRTCSignal', handleWebRTCSignal);
 
     return () => {
@@ -190,6 +192,15 @@ export function VoiceManager({
   }, [speakingUsers]);
 
   /**
+   * Sincroniza customização quando muda
+   */
+  useEffect(() => {
+    if (networkManager && isConnected && currentUser?.customization) {
+      networkManager.updateCustomization(currentUser.customization);
+    }
+  }, [networkManager, isConnected, currentUser?.customization]);
+
+  /**
    * Handle usuário entrou
    */
   const handleUserJoined = useCallback((userData) => {
@@ -275,6 +286,29 @@ export function VoiceManager({
       u.id === userId ? { ...u, mediaState } : u
     ));
   }, []);
+
+  /**
+   * Handle customização mudou
+   */
+  const handleUserCustomizationChanged = useCallback((userId, customization) => {
+    console.log('User customization changed:', userId, customization);
+
+    // Atualizar avatar remoto no Phaser
+    if (phaserGame) {
+      const scene = phaserGame.scene.scenes[0];
+      if (scene) {
+        const avatar = remoteAvatarsRef.current.get(userId);
+        if (avatar) {
+          avatar.updateCustomization(customization);
+        }
+      }
+    }
+
+    // Atualizar estado
+    setAllUsers(prev => prev.map(u =>
+      u.id === userId ? { ...u, customization } : u
+    ));
+  }, [phaserGame]);
 
   /**
    * Handle sinal WebRTC
