@@ -91,6 +91,16 @@ export class Avatar extends Phaser.GameObjects.Container {
     this.statusIndicator.setVisible(false);
     this.add(this.statusIndicator);
     this.currentStatusColor = 0x10b981; // Verde por padrão (disponível)
+
+    // Texto de emote (bolha de emote)
+    this.emoteText = this.scene.add.text(0, -55, '', {
+      fontSize: '32px',
+      fontFamily: 'Arial',
+    });
+    this.emoteText.setOrigin(0.5);
+    this.emoteText.setVisible(false);
+    this.add(this.emoteText);
+    this.emoteTimer = null;
   }
 
   /**
@@ -149,6 +159,47 @@ export class Avatar extends Phaser.GameObjects.Container {
     this.statusIndicator.clear();
     this.statusIndicator.fillStyle(statusColor, 1);
     this.statusIndicator.fillCircle(-30, -40, 5);
+  }
+
+  /**
+   * Mostra emote acima do avatar
+   */
+  showEmote(emoteIcon, duration = 2000) {
+    // Limpar timer anterior se existir
+    if (this.emoteTimer) {
+      clearTimeout(this.emoteTimer);
+    }
+
+    // Mostrar emote
+    this.emoteText.setText(emoteIcon);
+    this.emoteText.setVisible(true);
+
+    // Animação de entrada (escala)
+    this.scene.tweens.add({
+      targets: this.emoteText,
+      scaleX: { from: 0, to: 1 },
+      scaleY: { from: 0, to: 1 },
+      duration: 200,
+      ease: 'Back.easeOut',
+    });
+
+    // Ocultar após duração
+    this.emoteTimer = setTimeout(() => {
+      // Animação de saída
+      this.scene.tweens.add({
+        targets: this.emoteText,
+        alpha: 0,
+        scaleX: 0.5,
+        scaleY: 0.5,
+        duration: 200,
+        ease: 'Power2',
+        onComplete: () => {
+          this.emoteText.setVisible(false);
+          this.emoteText.setAlpha(1);
+          this.emoteText.setScale(1);
+        },
+      });
+    }, duration);
   }
 
   /**

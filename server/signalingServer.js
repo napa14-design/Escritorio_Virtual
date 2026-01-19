@@ -181,6 +181,20 @@ function startServer() {
     });
 
     /**
+     * Enviar emote
+     */
+    socket.on('send-emote', ({ roomId, emote }) => {
+      const room = rooms.get(roomId);
+      if (!room) return;
+
+      // Broadcast para outros usuários na sala
+      socket.to(roomId).emit('user-emote', {
+        userId: socket.id,
+        emote,
+      });
+    });
+
+    /**
      * Sinalização WebRTC
      */
     socket.on('webrtc-signal', ({ targetUserId, signal, senderId }) => {

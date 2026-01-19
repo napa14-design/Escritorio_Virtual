@@ -3,6 +3,7 @@ import useWebRTC from '../hooks/useWebRTC';
 import useVoiceActivityDetection, { useRemoteVoiceActivityDetection } from '../hooks/useVoiceActivityDetection';
 import useProximityVoice from '../hooks/useProximityVoice';
 import useAutoAway from '../hooks/useAutoAway';
+import useEmoteShortcuts from '../hooks/useEmoteShortcuts';
 import NetworkManager from '../systems/NetworkManager';
 import AudioControls from '../ui/AudioControls';
 import ProximityVideoPanel from '../ui/ProximityVideoPanel';
@@ -10,9 +11,11 @@ import ChatManager from './ChatManager';
 import SettingsModal from '../ui/SettingsModal';
 import ScreenSharePreview from '../ui/ScreenSharePreview';
 import StatusSelector from '../ui/StatusSelector';
+import EmoteSelector from '../ui/EmoteSelector';
 import { useToast } from '../ui/Toast';
 import { DEFAULT_AUDIO_ZONES, findZoneAtPosition } from '../config/audioZones';
 import { DEFAULT_STATUS, STATUS_CONFIG } from '../config/userStatus';
+import { EMOTE_CONFIG } from '../config/emotes';
 import { loadSettings, saveSettings, settingsToMediaConstraints, settingsToVADConfig } from '../utils/settingsStorage';
 
 /**
@@ -104,6 +107,7 @@ export function VoiceManager({
     manager.on('userMediaChanged', handleUserMediaChanged);
     manager.on('userCustomizationChanged', handleUserCustomizationChanged);
     manager.on('userStatusChanged', handleUserStatusChanged);
+    manager.on('userEmote', handleUserEmote);
     manager.on('webRTCSignal', handleWebRTCSignal);
 
     return () => {
@@ -485,6 +489,49 @@ export function VoiceManager({
     });
   }, [phaserGame, networkManager, toast]);
 
+  /**
+   * Handle emote selecionado
+   */
+  const handleEmoteSelect = useCallback((emote) => {
+    const emoteConfig = EMOTE_CONFIG[emote];
+    if (!emoteConfig) return;
+
+    // Mostrar emote no avatar local
+    if (phaserGame) {
+      const scene = phaserGame.scene.scenes[0];
+      if (scene?.player) {
+        scene.player.showEmote(emoteConfig.icon, emoteConfig.duration);
+      }
+    }
+
+    // Sincronizar com servidor
+    if (networkManager) {
+      networkManager.sendEmote(emote);
+    }
+  }, [phaserGame, networkManager]);
+
+  /**
+   * Handle emote recebido de outro usuário
+   */
+  const handleUserEmote = useCallback((userId, emote) => {
+    const emoteConfig = EMOTE_CONFIG[emote];
+    if (!emoteConfig) return;
+
+    // Mostrar emote no avatar remoto
+    if (phaserGame) {
+      const scene = phaserGame.scene.scenes[0];
+      if (scene) {
+        const avatar = remoteAvatarsRef.current.get(userId);
+        if (avatar) {
+          avatar.showEmote(emoteConfig.icon, emoteConfig.duration);
+        }
+      }
+    }
+  }, [phaserGame]);
+
+  // Atalhos de teclado para emotes
+  useEmoteShortcuts(handleEmoteSelect, isConnected);
+
   const nearbyUsers = getNearbyUsers();
   const connectedUsers = allUsers.length;
 
@@ -513,10 +560,17 @@ export function VoiceManager({
           top: '20px',
           right: '20px',
           zIndex: 1000,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '12px',
         }}>
           <StatusSelector
             currentStatus={userStatus}
             onStatusChange={handleStatusChange}
+          />
+          <EmoteSelector
+            onEmoteSelect={handleEmoteSelect}
+            disabled={!isConnected}
           />
         </div>
       )}

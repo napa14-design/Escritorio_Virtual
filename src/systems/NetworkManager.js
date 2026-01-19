@@ -17,6 +17,7 @@ export class NetworkManager {
       onUserMediaChanged: null,
       onUserCustomizationChanged: null,
       onUserStatusChanged: null,
+      onUserEmote: null,
       onWebRTCSignal: null,
       onConnected: null,
       onDisconnected: null,
@@ -108,6 +109,13 @@ export class NetworkManager {
     this.socket.on('user-status-changed', ({ userId, status }) => {
       if (this.callbacks.onUserStatusChanged) {
         this.callbacks.onUserStatusChanged(userId, status);
+      }
+    });
+
+    // Emote recebido
+    this.socket.on('user-emote', ({ userId, emote }) => {
+      if (this.callbacks.onUserEmote) {
+        this.callbacks.onUserEmote(userId, emote);
       }
     });
 
@@ -218,6 +226,18 @@ export class NetworkManager {
     this.socket.emit('update-status', {
       roomId: this.roomId,
       status,
+    });
+  }
+
+  /**
+   * Envia emote
+   */
+  sendEmote(emote) {
+    if (!this.socket || !this.connected) return;
+
+    this.socket.emit('send-emote', {
+      roomId: this.roomId,
+      emote,
     });
   }
 
