@@ -19,6 +19,8 @@ import UserProfileModal from '../ui/UserProfileModal';
 import RoomSelector from '../ui/RoomSelector';
 import CreateRoomModal from '../ui/CreateRoomModal';
 import ActivityLog from '../ui/ActivityLog';
+import ReactionsPanel from '../ui/ReactionsPanel';
+import { QuickPoll, CreatePollModal } from '../ui/QuickPoll';
 import useFollowMode from '../hooks/useFollowMode';
 import useProximityNotifications from '../hooks/useProximityNotifications';
 import { getSoundManager } from '../utils/soundManager';
@@ -59,6 +61,10 @@ export function VoiceManager({
   const [activityEvents, setActivityEvents] = useState([]);
   const [isActivityLogOpen, setIsActivityLogOpen] = useState(false);
   const [soundsEnabled, setSoundsEnabled] = useState(true);
+  const [isReactionsPanelOpen, setIsReactionsPanelOpen] = useState(false);
+  const [activePoll, setActivePoll] = useState(null);
+  const [isCreatePollOpen, setIsCreatePollOpen] = useState(false);
+  const [userVotes, setUserVotes] = useState(new Map()); // pollId -> optionId
 
   const networkRef = useRef(null);
   const remoteAvatarsRef = useRef(new Map());
@@ -153,6 +159,9 @@ export function VoiceManager({
     manager.on('webRTCSignal', handleWebRTCSignal);
     manager.on('knock', handleKnock);
     manager.on('privateMessage', handlePrivateMessage);
+    manager.on('reaction', handleReaction);
+    manager.on('poll-created', handlePollCreated);
+    manager.on('poll-vote', handlePollVote);
 
     return () => {
       manager.disconnect();
@@ -606,6 +615,152 @@ export function VoiceManager({
     }
   }, [phaserGame]);
 
+  /**
+   * Handle reação enviada
+   */
+  const handleSendReaction = useCallback((reaction) => {
+    if (!networkManager || !isConnected) return;
+
+    // Enviar reação para o servidor
+    networkManager.sendReaction(reaction);
+
+    // Mostrar reação localmente
+    if (phaserGame) {
+      const scene = phaserGame.scene.scenes[0];
+      if (scene?.player) {
+        scene.player.showEmote(reaction.emoji, 2500);
+      }
+    }
+
+    // Log de atividade
+    addActivityEvent('reaction', `You reacted with ${reaction.emoji}`);
+
+    // Notificação
+    toast.info(`${reaction.emoji} ${reaction.label}`, { duration: 1500 });
+  }, [networkManager, isConnected, phaserGame, addActivityEvent, toast]);
+
+  /**
+   * Handle reação recebida de outro usuário
+   */
+  const handleReaction = useCallback((userId, reaction) => {
+    const user = allUsers.find(u => u.id === userId);
+    const userName = user?.name || 'User';
+
+    // Mostrar reação no avatar
+    if (phaserGame) {
+      const scene = phaserGame.scene.scenes[0];
+      if (scene) {
+        const avatar = remoteAvatarsRef.current.get(userId);
+        if (avatar) {
+          avatar.showEmote(reaction.emoji, 2500);
+        }
+      }
+    }
+
+    // Log de atividade
+    addActivityEvent('reaction', `${userName} reacted with ${reaction.emoji}`);
+  }, [phaserGame, allUsers, addActivityEvent]);
+
+  /**
+   * Handle criar nova poll
+   */
+  const handleCreatePoll = useCallback((pollData) => {
+    if (!networkManager || !isConnected) return;
+
+    const poll = {
+      id: `poll-${Date.now()}-${localUserId}`,
+      question: pollData.question,
+      options: pollData.options.map((text, index) => ({
+        id: `option-${index}`,
+        text,
+      })),
+      votes: {},
+      createdBy: localUserId,
+      createdByName: currentUser?.name || 'Unknown',
+      createdAt: Date.now(),
+    };
+
+    // Enviar para o servidor
+    networkManager.createPoll(poll);
+
+    // Definir como poll ativa localmente
+    setActivePoll(poll);
+
+    // Log de atividade
+    addActivityEvent('poll', `You created a poll: "${poll.question}"`);
+
+    // Fechar modal
+    setIsCreatePollOpen(false);
+
+    // Notificação
+    toast.success('Poll created!', { duration: 2000 });
+  }, [networkManager, isConnected, localUserId, currentUser, addActivityEvent, toast]);
+
+  /**
+   * Handle poll criada (recebida do servidor)
+   */
+  const handlePollCreated = useCallback((poll) => {
+    // Definir como poll ativa
+    setActivePoll(poll);
+
+    // Log de atividade
+    const creatorName = poll.createdByName || 'Someone';
+    addActivityEvent('poll', `${creatorName} created a poll: "${poll.question}"`);
+
+    // Notificação se não foi criada por nós
+    if (poll.createdBy !== localUserId) {
+      soundManager.play('notification');
+      toast.info(`📊 New poll: "${poll.question}"`, { duration: 4000 });
+    }
+  }, [localUserId, addActivityEvent, soundManager, toast]);
+
+  /**
+   * Handle votar em poll
+   */
+  const handleVote = useCallback((poll, optionId) => {
+    if (!networkManager || !isConnected) return;
+
+    // Verificar se já votou
+    if (userVotes.has(poll.id)) {
+      toast.warning('You already voted in this poll', { duration: 2000 });
+      return;
+    }
+
+    // Enviar voto para o servidor
+    networkManager.votePoll(poll.id, optionId);
+
+    // Marcar como votado localmente
+    setUserVotes(prev => new Map(prev).set(poll.id, optionId));
+
+    // Log de atividade
+    const option = poll.options.find(o => o.id === optionId);
+    addActivityEvent('poll', `You voted for "${option?.text}"`);
+
+    // Notificação
+    toast.success('Vote registered!', { duration: 2000 });
+  }, [networkManager, isConnected, userVotes, addActivityEvent, toast]);
+
+  /**
+   * Handle voto recebido do servidor
+   */
+  const handlePollVote = useCallback((pollId, optionId, userId) => {
+    // Atualizar poll ativa
+    setActivePoll(prev => {
+      if (!prev || prev.id !== pollId) return prev;
+
+      const updatedPoll = { ...prev };
+      if (!updatedPoll.votes) updatedPoll.votes = {};
+      if (!updatedPoll.votes[optionId]) updatedPoll.votes[optionId] = [];
+
+      // Adicionar voto se usuário ainda não votou nesta opção
+      if (!updatedPoll.votes[optionId].includes(userId)) {
+        updatedPoll.votes[optionId] = [...updatedPoll.votes[optionId], userId];
+      }
+
+      return updatedPoll;
+    });
+  }, []);
+
   // Atalhos de teclado para emotes
   useEmoteShortcuts(handleEmoteSelect, isConnected);
 
@@ -947,6 +1102,48 @@ export function VoiceManager({
           >
             📋
           </button>
+          <button
+            onClick={() => setIsReactionsPanelOpen(!isReactionsPanelOpen)}
+            disabled={!isConnected}
+            style={{
+              width: '48px',
+              height: '48px',
+              borderRadius: '50%',
+              border: '2px solid #e5e7eb',
+              background: isReactionsPanelOpen ? '#fef3c7' : (isConnected ? '#ffffff' : '#f3f4f6'),
+              cursor: isConnected ? 'pointer' : 'not-allowed',
+              fontSize: '24px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'all 0.2s',
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+            }}
+            title="Reactions"
+          >
+            👍
+          </button>
+          <button
+            onClick={() => setIsCreatePollOpen(true)}
+            disabled={!isConnected}
+            style={{
+              width: '48px',
+              height: '48px',
+              borderRadius: '50%',
+              border: '2px solid #e5e7eb',
+              background: isConnected ? '#ffffff' : '#f3f4f6',
+              cursor: isConnected ? 'pointer' : 'not-allowed',
+              fontSize: '24px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'all 0.2s',
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+            }}
+            title="Create Poll"
+          >
+            📊
+          </button>
         </div>
       )}
 
@@ -1133,6 +1330,33 @@ export function VoiceManager({
         <CreateRoomModal
           onClose={() => setIsCreateRoomOpen(false)}
           onCreate={handleCreateRoom}
+        />
+      )}
+
+      {/* Reactions Panel */}
+      {isReactionsPanelOpen && (
+        <ReactionsPanel
+          onReaction={handleSendReaction}
+          disabled={!isConnected}
+        />
+      )}
+
+      {/* Active Poll */}
+      {activePoll && (
+        <QuickPoll
+          poll={activePoll}
+          onVote={(optionId) => handleVote(activePoll, optionId)}
+          onClose={() => setActivePoll(null)}
+          hasVoted={userVotes.has(activePoll.id)}
+          currentUserId={localUserId}
+        />
+      )}
+
+      {/* Create Poll Modal */}
+      {isCreatePollOpen && (
+        <CreatePollModal
+          onClose={() => setIsCreatePollOpen(false)}
+          onCreate={handleCreatePoll}
         />
       )}
     </>

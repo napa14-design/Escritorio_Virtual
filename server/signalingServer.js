@@ -368,6 +368,52 @@ function startServer() {
     });
 
     /**
+     * Enviar reação
+     */
+    socket.on('send-reaction', ({ roomId, reaction }) => {
+      const room = rooms.get(roomId);
+      if (!room) return;
+
+      // Broadcast reação para outros usuários na sala
+      socket.to(roomId).emit('user-reaction', {
+        userId: socket.id,
+        reaction,
+      });
+
+      console.log(`${reaction.emoji} Reaction from ${socket.id} in room ${roomId}`);
+    });
+
+    /**
+     * Criar poll
+     */
+    socket.on('create-poll', ({ roomId, poll }) => {
+      const room = rooms.get(roomId);
+      if (!room) return;
+
+      // Broadcast poll para toda a sala (incluindo criador)
+      io.to(roomId).emit('poll-created', poll);
+
+      console.log(`📊 Poll created in room ${roomId}: "${poll.question}"`);
+    });
+
+    /**
+     * Votar em poll
+     */
+    socket.on('vote-poll', ({ roomId, pollId, optionId }) => {
+      const room = rooms.get(roomId);
+      if (!room) return;
+
+      // Broadcast voto para toda a sala
+      io.to(roomId).emit('poll-vote', {
+        pollId,
+        optionId,
+        userId: socket.id,
+      });
+
+      console.log(`🗳️  Vote in poll ${pollId}: option ${optionId} by ${socket.id}`);
+    });
+
+    /**
      * Desconexão
      */
     socket.on('disconnect', () => {

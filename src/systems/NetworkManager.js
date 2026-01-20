@@ -22,6 +22,9 @@ export class NetworkManager {
       onWhiteboardAction: null,
       onKnock: null,
       onPrivateMessage: null,
+      onReaction: null,
+      onPollCreated: null,
+      onPollVote: null,
       onConnected: null,
       onDisconnected: null,
     };
@@ -147,6 +150,27 @@ export class NetworkManager {
     this.socket.on('private-message', ({ fromUserId, fromUserName, message }) => {
       if (this.callbacks.onPrivateMessage) {
         this.callbacks.onPrivateMessage(fromUserId, fromUserName, message);
+      }
+    });
+
+    // Reação recebida
+    this.socket.on('user-reaction', ({ userId, reaction }) => {
+      if (this.callbacks.onReaction) {
+        this.callbacks.onReaction(userId, reaction);
+      }
+    });
+
+    // Poll criada
+    this.socket.on('poll-created', (poll) => {
+      if (this.callbacks.onPollCreated) {
+        this.callbacks.onPollCreated(poll);
+      }
+    });
+
+    // Voto em poll recebido
+    this.socket.on('poll-vote', ({ pollId, optionId, userId }) => {
+      if (this.callbacks.onPollVote) {
+        this.callbacks.onPollVote(pollId, optionId, userId);
       }
     });
 
@@ -324,6 +348,43 @@ export class NetworkManager {
       roomId: this.roomId,
       message,
       timestamp: Date.now(),
+    });
+  }
+
+  /**
+   * Envia reação para a sala
+   */
+  sendReaction(reaction) {
+    if (!this.socket || !this.connected) return;
+
+    this.socket.emit('send-reaction', {
+      roomId: this.roomId,
+      reaction,
+    });
+  }
+
+  /**
+   * Cria nova poll
+   */
+  createPoll(poll) {
+    if (!this.socket || !this.connected) return;
+
+    this.socket.emit('create-poll', {
+      roomId: this.roomId,
+      poll,
+    });
+  }
+
+  /**
+   * Envia voto em poll
+   */
+  votePoll(pollId, optionId) {
+    if (!this.socket || !this.connected) return;
+
+    this.socket.emit('vote-poll', {
+      roomId: this.roomId,
+      pollId,
+      optionId,
     });
   }
 
