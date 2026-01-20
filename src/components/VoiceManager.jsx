@@ -18,7 +18,10 @@ import UserActionsMenu from '../ui/UserActionsMenu';
 import UserProfileModal from '../ui/UserProfileModal';
 import RoomSelector from '../ui/RoomSelector';
 import CreateRoomModal from '../ui/CreateRoomModal';
+import ActivityLog from '../ui/ActivityLog';
 import useFollowMode from '../hooks/useFollowMode';
+import useProximityNotifications from '../hooks/useProximityNotifications';
+import { getSoundManager } from '../utils/soundManager';
 import { useToast } from '../ui/Toast';
 import { DEFAULT_AUDIO_ZONES, findZoneAtPosition } from '../config/audioZones';
 import { DEFAULT_STATUS, STATUS_CONFIG } from '../config/userStatus';
@@ -53,17 +56,37 @@ export function VoiceManager({
   const [currentRoom, setCurrentRoom] = useState('default-room');
   const [isRoomSelectorOpen, setIsRoomSelectorOpen] = useState(false);
   const [isCreateRoomOpen, setIsCreateRoomOpen] = useState(false);
+  const [activityEvents, setActivityEvents] = useState([]);
+  const [isActivityLogOpen, setIsActivityLogOpen] = useState(false);
+  const [soundsEnabled, setSoundsEnabled] = useState(true);
 
   const networkRef = useRef(null);
   const remoteAvatarsRef = useRef(new Map());
   const toast = useToast();
   const audioZones = DEFAULT_AUDIO_ZONES;
+  const soundManager = getSoundManager();
 
   // Auto-away detection
   useAutoAway(userStatus, setUserStatus);
 
   // Follow mode
   const { followingUserId, isFollowing, startFollowing, stopFollowing } = useFollowMode(phaserGame, allUsers);
+
+  /**
+   * Adiciona evento ao activity log
+   */
+  const addActivityEvent = useCallback((type, text) => {
+    setActivityEvents(prev => [...prev, {
+      type,
+      text,
+      timestamp: Date.now(),
+    }]);
+  }, []);
+
+  // Configurar gerenciador de som
+  useEffect(() => {
+    soundManager.setEnabled(soundsEnabled);
+  }, [soundsEnabled, soundManager]);
 
   // WebRTC hook
   const {
@@ -243,6 +266,10 @@ export function VoiceManager({
   const handleUserJoined = useCallback((userData) => {
     console.log('User joined:', userData);
 
+    // Som e notificação
+    soundManager.play('userJoined');
+    addActivityEvent('user-joined', `${userData.name} joined the room`);
+
     // Adicionar à lista de usuários
     setAllUsers(prev => {
       const existing = prev.find(u => u.id === userData.id);
@@ -268,7 +295,7 @@ export function VoiceManager({
     toast.info(`${userData.name} entrou no escritório`, {
       duration: 3000,
     });
-  }, [phaserGame, localStream, createPeerConnection, toast]);
+  }, [phaserGame, localStream, createPeerConnection, toast, soundManager, addActivityEvent]);
 
   /**
    * Handle usuário saiu
@@ -279,6 +306,10 @@ export function VoiceManager({
     // Pegar nome antes de remover
     const user = allUsers.find(u => u.id === userId);
     const userName = user?.name || 'User';
+
+    // Som e notificação
+    soundManager.play('userLeft');
+    addActivityEvent('user-left', `${userName} left the room`);
 
     // Remover da lista
     setAllUsers(prev => prev.filter(u => u.id !== userId));
@@ -297,7 +328,7 @@ export function VoiceManager({
     toast.info(`${userName} saiu do escritório`, {
       duration: 3000,
     });
-  }, [removePeerConnection, allUsers, toast]);
+  }, [removePeerConnection, allUsers, toast, soundManager, addActivityEvent]);
 
   /**
    * Handle usuário se moveu
@@ -580,6 +611,9 @@ export function VoiceManager({
 
   const nearbyUsers = getNearbyUsers();
   const connectedUsers = allUsers.length;
+
+  // Notificações de proximidade
+  useProximityNotifications(nearbyUsers, toast, soundsEnabled);
 
   /**
    * Atualiza transparência dos avatars baseado na distância
@@ -892,6 +926,27 @@ export function VoiceManager({
           >
             🚪
           </button>
+          <button
+            onClick={() => setIsActivityLogOpen(!isActivityLogOpen)}
+            disabled={!isConnected}
+            style={{
+              width: '48px',
+              height: '48px',
+              borderRadius: '50%',
+              border: '2px solid #e5e7eb',
+              background: isConnected ? '#ffffff' : '#f3f4f6',
+              cursor: isConnected ? 'pointer' : 'not-allowed',
+              fontSize: '24px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'all 0.2s',
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+            }}
+            title="Activity Log"
+          >
+            📋
+          </button>
         </div>
       )}
 
@@ -1049,6 +1104,14 @@ export function VoiceManager({
             Parar
           </button>
         </div>
+      )}
+
+      {/* Activity Log */}
+      {isActivityLogOpen && (
+        <ActivityLog
+          events={activityEvents}
+          onClose={() => setIsActivityLogOpen(false)}
+        />
       )}
 
       {/* Room Selector */}
