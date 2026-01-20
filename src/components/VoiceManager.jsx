@@ -13,6 +13,17 @@ import ScreenSharePreview from '../ui/ScreenSharePreview';
 import StatusSelector from '../ui/StatusSelector';
 import EmoteSelector from '../ui/EmoteSelector';
 import Whiteboard from '../ui/Whiteboard';
+import NearbyUsersList from '../ui/NearbyUsersList';
+import UserActionsMenu from '../ui/UserActionsMenu';
+import UserProfileModal from '../ui/UserProfileModal';
+import RoomSelector from '../ui/RoomSelector';
+import CreateRoomModal from '../ui/CreateRoomModal';
+import ActivityLog from '../ui/ActivityLog';
+import ReactionsPanel from '../ui/ReactionsPanel';
+import { QuickPoll, CreatePollModal } from '../ui/QuickPoll';
+import useFollowMode from '../hooks/useFollowMode';
+import useProximityNotifications from '../hooks/useProximityNotifications';
+import { getSoundManager } from '../utils/soundManager';
 import { useToast } from '../ui/Toast';
 import { DEFAULT_AUDIO_ZONES, findZoneAtPosition } from '../config/audioZones';
 import { DEFAULT_STATUS, STATUS_CONFIG } from '../config/userStatus';
@@ -35,19 +46,53 @@ export function VoiceManager({
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [screenStream, setScreenStream] = useState(null);
   const [isWhiteboardOpen, setIsWhiteboardOpen] = useState(false);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [menuPosition, setMenuPosition] = useState(null);
+  const [profileUser, setProfileUser] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
   const [currentZone, setCurrentZone] = useState(null);
   const [settings, setSettings] = useState(() => loadSettings());
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [userStatus, setUserStatus] = useState(DEFAULT_STATUS);
+  const [availableRooms, setAvailableRooms] = useState([]);
+  const [currentRoom, setCurrentRoom] = useState('default-room');
+  const [isRoomSelectorOpen, setIsRoomSelectorOpen] = useState(false);
+  const [isCreateRoomOpen, setIsCreateRoomOpen] = useState(false);
+  const [activityEvents, setActivityEvents] = useState([]);
+  const [isActivityLogOpen, setIsActivityLogOpen] = useState(false);
+  const [soundsEnabled, setSoundsEnabled] = useState(true);
+  const [isReactionsPanelOpen, setIsReactionsPanelOpen] = useState(false);
+  const [activePoll, setActivePoll] = useState(null);
+  const [isCreatePollOpen, setIsCreatePollOpen] = useState(false);
+  const [userVotes, setUserVotes] = useState(new Map()); // pollId -> optionId
 
   const networkRef = useRef(null);
   const remoteAvatarsRef = useRef(new Map());
   const toast = useToast();
   const audioZones = DEFAULT_AUDIO_ZONES;
+  const soundManager = getSoundManager();
 
   // Auto-away detection
   useAutoAway(userStatus, setUserStatus);
+
+  // Follow mode
+  const { followingUserId, isFollowing, startFollowing, stopFollowing } = useFollowMode(phaserGame, allUsers);
+
+  /**
+   * Adiciona evento ao activity log
+   */
+  const addActivityEvent = useCallback((type, text) => {
+    setActivityEvents(prev => [...prev, {
+      type,
+      text,
+      timestamp: Date.now(),
+    }]);
+  }, []);
+
+  // Configurar gerenciador de som
+  useEffect(() => {
+    soundManager.setEnabled(soundsEnabled);
+  }, [soundsEnabled, soundManager]);
 
   // WebRTC hook
   const {
@@ -112,6 +157,11 @@ export function VoiceManager({
     manager.on('userStatusChanged', handleUserStatusChanged);
     manager.on('userEmote', handleUserEmote);
     manager.on('webRTCSignal', handleWebRTCSignal);
+    manager.on('knock', handleKnock);
+    manager.on('privateMessage', handlePrivateMessage);
+    manager.on('reaction', handleReaction);
+    manager.on('poll-created', handlePollCreated);
+    manager.on('poll-vote', handlePollVote);
 
     return () => {
       manager.disconnect();
@@ -225,6 +275,10 @@ export function VoiceManager({
   const handleUserJoined = useCallback((userData) => {
     console.log('User joined:', userData);
 
+    // Som e notificação
+    soundManager.play('userJoined');
+    addActivityEvent('user-joined', `${userData.name} joined the room`);
+
     // Adicionar à lista de usuários
     setAllUsers(prev => {
       const existing = prev.find(u => u.id === userData.id);
@@ -250,7 +304,7 @@ export function VoiceManager({
     toast.info(`${userData.name} entrou no escritório`, {
       duration: 3000,
     });
-  }, [phaserGame, localStream, createPeerConnection, toast]);
+  }, [phaserGame, localStream, createPeerConnection, toast, soundManager, addActivityEvent]);
 
   /**
    * Handle usuário saiu
@@ -261,6 +315,10 @@ export function VoiceManager({
     // Pegar nome antes de remover
     const user = allUsers.find(u => u.id === userId);
     const userName = user?.name || 'User';
+
+    // Som e notificação
+    soundManager.play('userLeft');
+    addActivityEvent('user-left', `${userName} left the room`);
 
     // Remover da lista
     setAllUsers(prev => prev.filter(u => u.id !== userId));
@@ -279,7 +337,7 @@ export function VoiceManager({
     toast.info(`${userName} saiu do escritório`, {
       duration: 3000,
     });
-  }, [removePeerConnection, allUsers, toast]);
+  }, [removePeerConnection, allUsers, toast, soundManager, addActivityEvent]);
 
   /**
    * Handle usuário se moveu
@@ -557,11 +615,392 @@ export function VoiceManager({
     }
   }, [phaserGame]);
 
+  /**
+   * Handle reação enviada
+   */
+  const handleSendReaction = useCallback((reaction) => {
+    if (!networkManager || !isConnected) return;
+
+    // Enviar reação para o servidor
+    networkManager.sendReaction(reaction);
+
+    // Mostrar reação localmente
+    if (phaserGame) {
+      const scene = phaserGame.scene.scenes[0];
+      if (scene?.player) {
+        scene.player.showEmote(reaction.emoji, 2500);
+      }
+    }
+
+    // Log de atividade
+    addActivityEvent('reaction', `You reacted with ${reaction.emoji}`);
+
+    // Notificação
+    toast.info(`${reaction.emoji} ${reaction.label}`, { duration: 1500 });
+  }, [networkManager, isConnected, phaserGame, addActivityEvent, toast]);
+
+  /**
+   * Handle reação recebida de outro usuário
+   */
+  const handleReaction = useCallback((userId, reaction) => {
+    const user = allUsers.find(u => u.id === userId);
+    const userName = user?.name || 'User';
+
+    // Mostrar reação no avatar
+    if (phaserGame) {
+      const scene = phaserGame.scene.scenes[0];
+      if (scene) {
+        const avatar = remoteAvatarsRef.current.get(userId);
+        if (avatar) {
+          avatar.showEmote(reaction.emoji, 2500);
+        }
+      }
+    }
+
+    // Log de atividade
+    addActivityEvent('reaction', `${userName} reacted with ${reaction.emoji}`);
+  }, [phaserGame, allUsers, addActivityEvent]);
+
+  /**
+   * Handle criar nova poll
+   */
+  const handleCreatePoll = useCallback((pollData) => {
+    if (!networkManager || !isConnected) return;
+
+    const poll = {
+      id: `poll-${Date.now()}-${localUserId}`,
+      question: pollData.question,
+      options: pollData.options.map((text, index) => ({
+        id: `option-${index}`,
+        text,
+      })),
+      votes: {},
+      createdBy: localUserId,
+      createdByName: currentUser?.name || 'Unknown',
+      createdAt: Date.now(),
+    };
+
+    // Enviar para o servidor
+    networkManager.createPoll(poll);
+
+    // Definir como poll ativa localmente
+    setActivePoll(poll);
+
+    // Log de atividade
+    addActivityEvent('poll', `You created a poll: "${poll.question}"`);
+
+    // Fechar modal
+    setIsCreatePollOpen(false);
+
+    // Notificação
+    toast.success('Poll created!', { duration: 2000 });
+  }, [networkManager, isConnected, localUserId, currentUser, addActivityEvent, toast]);
+
+  /**
+   * Handle poll criada (recebida do servidor)
+   */
+  const handlePollCreated = useCallback((poll) => {
+    // Definir como poll ativa
+    setActivePoll(poll);
+
+    // Log de atividade
+    const creatorName = poll.createdByName || 'Someone';
+    addActivityEvent('poll', `${creatorName} created a poll: "${poll.question}"`);
+
+    // Notificação se não foi criada por nós
+    if (poll.createdBy !== localUserId) {
+      soundManager.play('notification');
+      toast.info(`📊 New poll: "${poll.question}"`, { duration: 4000 });
+    }
+  }, [localUserId, addActivityEvent, soundManager, toast]);
+
+  /**
+   * Handle votar em poll
+   */
+  const handleVote = useCallback((poll, optionId) => {
+    if (!networkManager || !isConnected) return;
+
+    // Verificar se já votou
+    if (userVotes.has(poll.id)) {
+      toast.warning('You already voted in this poll', { duration: 2000 });
+      return;
+    }
+
+    // Enviar voto para o servidor
+    networkManager.votePoll(poll.id, optionId);
+
+    // Marcar como votado localmente
+    setUserVotes(prev => new Map(prev).set(poll.id, optionId));
+
+    // Log de atividade
+    const option = poll.options.find(o => o.id === optionId);
+    addActivityEvent('poll', `You voted for "${option?.text}"`);
+
+    // Notificação
+    toast.success('Vote registered!', { duration: 2000 });
+  }, [networkManager, isConnected, userVotes, addActivityEvent, toast]);
+
+  /**
+   * Handle voto recebido do servidor
+   */
+  const handlePollVote = useCallback((pollId, optionId, userId) => {
+    // Atualizar poll ativa
+    setActivePoll(prev => {
+      if (!prev || prev.id !== pollId) return prev;
+
+      const updatedPoll = { ...prev };
+      if (!updatedPoll.votes) updatedPoll.votes = {};
+      if (!updatedPoll.votes[optionId]) updatedPoll.votes[optionId] = [];
+
+      // Adicionar voto se usuário ainda não votou nesta opção
+      if (!updatedPoll.votes[optionId].includes(userId)) {
+        updatedPoll.votes[optionId] = [...updatedPoll.votes[optionId], userId];
+      }
+
+      return updatedPoll;
+    });
+  }, []);
+
   // Atalhos de teclado para emotes
   useEmoteShortcuts(handleEmoteSelect, isConnected);
 
   const nearbyUsers = getNearbyUsers();
   const connectedUsers = allUsers.length;
+
+  // Notificações de proximidade
+  useProximityNotifications(nearbyUsers, toast, soundsEnabled);
+
+  /**
+   * Atualiza transparência dos avatars baseado na distância
+   */
+  useEffect(() => {
+    if (!phaserGame || !currentUserPosition) return;
+
+    const scene = phaserGame.scene.scenes[0];
+    if (!scene) return;
+
+    const maxDistance = 12; // Distância máxima para efeito de transparência
+
+    allUsers.forEach(user => {
+      if (user.isLocalUser) return;
+
+      const avatar = remoteAvatarsRef.current.get(user.id);
+      if (!avatar) return;
+
+      const distance = user.proximityData?.distance || 0;
+
+      if (distance > maxDistance) {
+        avatar.setDistanceOpacity(maxDistance, maxDistance);
+      } else {
+        avatar.setDistanceOpacity(distance, maxDistance);
+      }
+    });
+  }, [phaserGame, allUsers, currentUserPosition]);
+
+  /**
+   * Mostra círculo de proximidade no avatar do jogador
+   */
+  useEffect(() => {
+    if (!phaserGame) return;
+
+    const scene = phaserGame.scene.scenes[0];
+    if (!scene || !scene.player) return;
+
+    // Mostrar círculo de proximidade permanentemente
+    const maxDistance = 8; // Mesma distância do useProximityVoice
+    const radiusInPixels = maxDistance * 32; // Converter tiles para pixels (aproximado)
+    scene.player.showProximityCircle(radiusInPixels);
+
+    return () => {
+      if (scene && scene.player) {
+        scene.player.hideProximityCircle();
+      }
+    };
+  }, [phaserGame]);
+
+  /**
+   * Handle knock recebido
+   */
+  const handleKnock = useCallback((fromUserId, fromUserName) => {
+    // Mostrar animação no avatar
+    if (phaserGame) {
+      const scene = phaserGame.scene.scenes[0];
+      if (scene && scene.player) {
+        // Animar avatar pulsando
+        scene.tweens.add({
+          targets: scene.player,
+          scaleX: 1.2,
+          scaleY: 1.2,
+          duration: 150,
+          yoyo: true,
+          repeat: 2,
+        });
+      }
+    }
+
+    // Notificação
+    toast.info(`👋 ${fromUserName} está chamando você!`, { duration: 3000 });
+  }, [phaserGame, toast]);
+
+  /**
+   * Handle mensagem privada recebida
+   */
+  const handlePrivateMessage = useCallback((fromUserId, fromUserName, message) => {
+    toast.success(`💬 ${fromUserName}: ${message}`, { duration: 5000 });
+  }, [toast]);
+
+  /**
+   * Handle clique em usuário na lista de próximos
+   */
+  const handleNearbyUserClick = useCallback((user, event) => {
+    setSelectedUser(user);
+    setMenuPosition({
+      x: event?.clientX || window.innerWidth / 2,
+      y: event?.clientY || window.innerHeight / 2,
+    });
+  }, []);
+
+  /**
+   * Handle ação do menu de usuário
+   */
+  const handleUserAction = useCallback((actionId, user) => {
+    if (!phaserGame || !networkManager) return;
+
+    const scene = phaserGame.scene.scenes[0];
+    if (!scene) return;
+
+    switch (actionId) {
+      case 'teleport':
+        // Teleportar para o usuário
+        if (user.position && scene.player) {
+          const targetX = user.position.x + (Math.random() > 0.5 ? 1 : -1);
+          const targetY = user.position.y + (Math.random() > 0.5 ? 1 : -1);
+          scene.player.moveToGrid(targetX, targetY, scene.pathfinding);
+          toast.success(`🚀 Teleportado para ${user.name}`, { duration: 2000 });
+        }
+        break;
+
+      case 'follow':
+        // Seguir usuário
+        startFollowing(user.id);
+        toast.success(`👣 Seguindo ${user.name}`, { duration: 2000 });
+        break;
+
+      case 'knock':
+        // Enviar knock
+        networkManager.sendKnock(user.id);
+        toast.info(`👋 Chamando ${user.name}...`, { duration: 2000 });
+        break;
+
+      case 'chat':
+        // Abrir chat privado (simulado com prompt por enquanto)
+        const message = window.prompt(`Enviar mensagem para ${user.name}:`);
+        if (message) {
+          networkManager.sendPrivateMessage(user.id, message);
+          toast.success(`💬 Mensagem enviada para ${user.name}`, { duration: 2000 });
+        }
+        break;
+
+      case 'profile':
+        // Ver perfil
+        setProfileUser(user);
+        break;
+
+      default:
+        break;
+    }
+  }, [phaserGame, networkManager, startFollowing, toast]);
+
+  /**
+   * Carregar lista de salas
+   */
+  const loadRooms = useCallback(async () => {
+    if (!networkManager) return;
+
+    try {
+      const rooms = await networkManager.getRooms();
+      setAvailableRooms(rooms);
+    } catch (error) {
+      console.error('Error loading rooms:', error);
+    }
+  }, [networkManager]);
+
+  /**
+   * Abrir seletor de salas
+   */
+  const handleOpenRoomSelector = useCallback(() => {
+    loadRooms();
+    setIsRoomSelectorOpen(true);
+  }, [loadRooms]);
+
+  /**
+   * Selecionar sala
+   */
+  const handleSelectRoom = useCallback(async (room) => {
+    if (!networkManager) return;
+
+    try {
+      // Se sala privada, pedir senha
+      if (room.type === 'private') {
+        const password = window.prompt(`Enter password for ${room.name}:`);
+        if (!password) return;
+
+        await networkManager.switchRoom(room.id, password);
+      } else {
+        await networkManager.switchRoom(room.id);
+      }
+
+      setCurrentRoom(room.id);
+      setIsRoomSelectorOpen(false);
+      toast.success(`Switched to ${room.name}`, { duration: 2000 });
+
+      // Recarregar cena do Phaser
+      if (phaserGame) {
+        const scene = phaserGame.scene.scenes[0];
+        if (scene) {
+          scene.scene.restart();
+        }
+      }
+    } catch (error) {
+      toast.error(error.message || 'Failed to switch room', { duration: 3000 });
+    }
+  }, [networkManager, phaserGame, toast]);
+
+  /**
+   * Criar nova sala
+   */
+  const handleCreateRoom = useCallback(async (roomData) => {
+    if (!networkManager) return;
+
+    try {
+      const roomId = await networkManager.createRoom(roomData);
+      toast.success(`Room "${roomData.name}" created!`, { duration: 2000 });
+      setIsCreateRoomOpen(false);
+
+      // Recarregar lista de salas
+      await loadRooms();
+
+      // Entrar automaticamente na sala criada
+      await networkManager.switchRoom(roomId);
+      setCurrentRoom(roomId);
+    } catch (error) {
+      toast.error('Failed to create room', { duration: 3000 });
+    }
+  }, [networkManager, loadRooms, toast]);
+
+  /**
+   * Carregar salas ao conectar
+   */
+  useEffect(() => {
+    if (isConnected && networkManager) {
+      loadRooms();
+
+      // Listener para novas salas criadas
+      networkManager.getSocket()?.on('room-created', (newRoom) => {
+        setAvailableRooms(prev => [...prev, newRoom]);
+      });
+    }
+  }, [isConnected, networkManager, loadRooms]);
 
   return (
     <>
@@ -620,6 +1059,90 @@ export function VoiceManager({
             title="Open Whiteboard"
           >
             📝
+          </button>
+          <button
+            onClick={handleOpenRoomSelector}
+            disabled={!isConnected}
+            style={{
+              width: '48px',
+              height: '48px',
+              borderRadius: '50%',
+              border: '2px solid #e5e7eb',
+              background: isConnected ? '#ffffff' : '#f3f4f6',
+              cursor: isConnected ? 'pointer' : 'not-allowed',
+              fontSize: '24px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'all 0.2s',
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+            }}
+            title="Rooms"
+          >
+            🚪
+          </button>
+          <button
+            onClick={() => setIsActivityLogOpen(!isActivityLogOpen)}
+            disabled={!isConnected}
+            style={{
+              width: '48px',
+              height: '48px',
+              borderRadius: '50%',
+              border: '2px solid #e5e7eb',
+              background: isConnected ? '#ffffff' : '#f3f4f6',
+              cursor: isConnected ? 'pointer' : 'not-allowed',
+              fontSize: '24px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'all 0.2s',
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+            }}
+            title="Activity Log"
+          >
+            📋
+          </button>
+          <button
+            onClick={() => setIsReactionsPanelOpen(!isReactionsPanelOpen)}
+            disabled={!isConnected}
+            style={{
+              width: '48px',
+              height: '48px',
+              borderRadius: '50%',
+              border: '2px solid #e5e7eb',
+              background: isReactionsPanelOpen ? '#fef3c7' : (isConnected ? '#ffffff' : '#f3f4f6'),
+              cursor: isConnected ? 'pointer' : 'not-allowed',
+              fontSize: '24px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'all 0.2s',
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+            }}
+            title="Reactions"
+          >
+            👍
+          </button>
+          <button
+            onClick={() => setIsCreatePollOpen(true)}
+            disabled={!isConnected}
+            style={{
+              width: '48px',
+              height: '48px',
+              borderRadius: '50%',
+              border: '2px solid #e5e7eb',
+              background: isConnected ? '#ffffff' : '#f3f4f6',
+              cursor: isConnected ? 'pointer' : 'not-allowed',
+              fontSize: '24px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'all 0.2s',
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+            }}
+            title="Create Poll"
+          >
+            📊
           </button>
         </div>
       )}
@@ -688,6 +1211,154 @@ export function VoiceManager({
         onClose={() => setIsWhiteboardOpen(false)}
         networkManager={networkManager}
       />
+
+      {/* Nearby Users List */}
+      {isConnected && (
+        <NearbyUsersList
+          nearbyUsers={nearbyUsers.map(user => ({
+            ...user,
+            isSpeaking: isUserSpeaking(user.id),
+          }))}
+          onUserClick={handleNearbyUserClick}
+        />
+      )}
+
+      {/* User Actions Menu */}
+      {selectedUser && (
+        <UserActionsMenu
+          user={selectedUser}
+          position={menuPosition}
+          onClose={() => setSelectedUser(null)}
+          onAction={handleUserAction}
+        />
+      )}
+
+      {/* User Profile Modal */}
+      {profileUser && (
+        <UserProfileModal
+          user={profileUser}
+          isOwn={profileUser.id === localUserId}
+          onClose={() => setProfileUser(null)}
+          onUpdate={(data) => {
+            if (data.statusMessage !== undefined && networkManager) {
+              networkManager.updateStatusMessage(data.statusMessage);
+              toast.success('Status message updated!', { duration: 2000 });
+            }
+          }}
+          onSendMessage={(user) => {
+            const message = window.prompt(`Send message to ${user.name}:`);
+            if (message && networkManager) {
+              networkManager.sendPrivateMessage(user.id, message);
+              toast.success(`Message sent to ${user.name}`, { duration: 2000 });
+            }
+            setProfileUser(null);
+          }}
+          onTeleport={(user) => {
+            if (phaserGame) {
+              const scene = phaserGame.scene.scenes[0];
+              if (scene && scene.player && user.position) {
+                const targetX = user.position.x + 1;
+                const targetY = user.position.y + 1;
+                scene.player.moveToGrid(targetX, targetY, scene.pathfinding);
+                toast.success(`Teleported to ${user.name}`, { duration: 2000 });
+              }
+            }
+            setProfileUser(null);
+          }}
+        />
+      )}
+
+      {/* Follow Mode Indicator */}
+      {isFollowing && (
+        <div style={{
+          position: 'fixed',
+          top: '100px',
+          right: '20px',
+          background: 'rgba(16, 185, 129, 0.9)',
+          color: 'white',
+          padding: '12px 20px',
+          borderRadius: '8px',
+          zIndex: 1000,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2)',
+        }}>
+          <span>👣 Seguindo usuário</span>
+          <button
+            onClick={stopFollowing}
+            style={{
+              background: 'rgba(255, 255, 255, 0.2)',
+              border: 'none',
+              color: 'white',
+              padding: '4px 12px',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '12px',
+              fontWeight: 'bold',
+            }}
+          >
+            Parar
+          </button>
+        </div>
+      )}
+
+      {/* Activity Log */}
+      {isActivityLogOpen && (
+        <ActivityLog
+          events={activityEvents}
+          onClose={() => setIsActivityLogOpen(false)}
+        />
+      )}
+
+      {/* Room Selector */}
+      {isRoomSelectorOpen && (
+        <RoomSelector
+          rooms={availableRooms}
+          currentRoom={currentRoom}
+          onSelectRoom={handleSelectRoom}
+          onCreateRoom={() => {
+            setIsRoomSelectorOpen(false);
+            setIsCreateRoomOpen(true);
+          }}
+          onClose={() => setIsRoomSelectorOpen(false)}
+        />
+      )}
+
+      {/* Create Room Modal */}
+      {isCreateRoomOpen && (
+        <CreateRoomModal
+          onClose={() => setIsCreateRoomOpen(false)}
+          onCreate={handleCreateRoom}
+        />
+      )}
+
+      {/* Reactions Panel */}
+      {isReactionsPanelOpen && (
+        <ReactionsPanel
+          onReaction={handleSendReaction}
+          disabled={!isConnected}
+        />
+      )}
+
+      {/* Active Poll */}
+      {activePoll && (
+        <QuickPoll
+          poll={activePoll}
+          onVote={(optionId) => handleVote(activePoll, optionId)}
+          onClose={() => setActivePoll(null)}
+          hasVoted={userVotes.has(activePoll.id)}
+          currentUserId={localUserId}
+        />
+      )}
+
+      {/* Create Poll Modal */}
+      {isCreatePollOpen && (
+        <CreatePollModal
+          onClose={() => setIsCreatePollOpen(false)}
+          onCreate={handleCreatePoll}
+        />
+      )}
     </>
   );
 }

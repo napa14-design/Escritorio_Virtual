@@ -20,11 +20,17 @@ const rooms = new Map();
 /**
  * Estrutura de uma sala
  */
-function createRoom(roomId) {
+function createRoom(roomId, metadata = {}) {
   return {
     id: roomId,
+    name: metadata.name || roomId,
+    description: metadata.description || '',
+    type: metadata.type || 'public', // public or private
+    password: metadata.password || null,
+    maxUsers: metadata.maxUsers || 50,
     users: new Map(),
     createdAt: Date.now(),
+    createdBy: metadata.createdBy || null,
   };
 }
 
@@ -63,9 +69,93 @@ function startServer() {
 
   console.log('🚀 Signaling Server starting...');
 
+  // Criar sala padrão
+  if (!rooms.has('default-room')) {
+    rooms.set('default-room', createRoom('default-room', {
+      name: 'Main Office',
+      description: 'The main virtual office space',
+      type: 'public',
+      maxUsers: 50,
+    }));
+  }
+
   // Eventos do Socket.io
   io.on('connection', (socket) => {
     console.log(`✅ User connected: ${socket.id}`);
+
+    /**
+     * Listar todas as salas
+     */
+    socket.on('get-rooms', () => {
+      const roomsList = Array.from(rooms.values()).map(room => ({
+        id: room.id,
+        name: room.name,
+        description: room.description,
+        type: room.type,
+        maxUsers: room.maxUsers,
+        userCount: room.users.size,
+        createdAt: room.createdAt,
+      }));
+
+      socket.emit('rooms-list', roomsList);
+    });
+
+    /**
+     * Criar nova sala
+     */
+    socket.on('create-room', ({ roomData }) => {
+      const roomId = `room-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+      const newRoom = createRoom(roomId, {
+        name: roomData.name,
+        description: roomData.description,
+        type: roomData.type,
+        password: roomData.password,
+        maxUsers: roomData.maxUsers,
+        createdBy: socket.id,
+      });
+
+      rooms.set(roomId, newRoom);
+
+      console.log(`🏢 Room created: ${roomData.name} (${roomId})`);
+
+      // Notificar todos sobre nova sala
+      io.emit('room-created', {
+        id: newRoom.id,
+        name: newRoom.name,
+        description: newRoom.description,
+        type: newRoom.type,
+        maxUsers: newRoom.maxUsers,
+        userCount: 0,
+        createdAt: newRoom.createdAt,
+      });
+
+      socket.emit('room-create-success', { roomId });
+    });
+
+    /**
+     * Validar senha e entrar em sala privada
+     */
+    socket.on('join-room-with-password', ({ roomId, password, userData }, callback) => {
+      const room = rooms.get(roomId);
+
+      if (!room) {
+        callback({ success: false, error: 'Room not found' });
+        return;
+      }
+
+      if (room.type === 'private' && room.password !== password) {
+        callback({ success: false, error: 'Incorrect password' });
+        return;
+      }
+
+      if (room.users.size >= room.maxUsers) {
+        callback({ success: false, error: 'Room is full' });
+        return;
+      }
+
+      callback({ success: true });
+    });
 
     /**
      * Usuário entra em uma sala
@@ -235,6 +325,92 @@ function startServer() {
 
       // Broadcast ação para outros usuários na sala
       socket.to(roomId).emit('whiteboard-action', action);
+    });
+
+    /**
+     * Knock/Poke
+     */
+    socket.on('send-knock', ({ roomId, targetUserId }) => {
+      const room = rooms.get(roomId);
+      if (!room) return;
+
+      const fromUser = room.users.get(socket.id);
+      if (!fromUser) return;
+
+      // Enviar knock para o usuário específico
+      io.to(targetUserId).emit('knock-received', {
+        fromUserId: socket.id,
+        fromUserName: fromUser.name,
+      });
+
+      console.log(`👋 ${fromUser.name} knocked ${targetUserId}`);
+    });
+
+    /**
+     * Mensagem privada
+     */
+    socket.on('send-private-message', ({ roomId, targetUserId, message }) => {
+      const room = rooms.get(roomId);
+      if (!room) return;
+
+      const fromUser = room.users.get(socket.id);
+      if (!fromUser) return;
+
+      // Enviar mensagem para o usuário específico
+      io.to(targetUserId).emit('private-message', {
+        fromUserId: socket.id,
+        fromUserName: fromUser.name,
+        message,
+        timestamp: Date.now(),
+      });
+
+      console.log(`💬 ${fromUser.name} sent private message to ${targetUserId}`);
+    });
+
+    /**
+     * Enviar reação
+     */
+    socket.on('send-reaction', ({ roomId, reaction }) => {
+      const room = rooms.get(roomId);
+      if (!room) return;
+
+      // Broadcast reação para outros usuários na sala
+      socket.to(roomId).emit('user-reaction', {
+        userId: socket.id,
+        reaction,
+      });
+
+      console.log(`${reaction.emoji} Reaction from ${socket.id} in room ${roomId}`);
+    });
+
+    /**
+     * Criar poll
+     */
+    socket.on('create-poll', ({ roomId, poll }) => {
+      const room = rooms.get(roomId);
+      if (!room) return;
+
+      // Broadcast poll para toda a sala (incluindo criador)
+      io.to(roomId).emit('poll-created', poll);
+
+      console.log(`📊 Poll created in room ${roomId}: "${poll.question}"`);
+    });
+
+    /**
+     * Votar em poll
+     */
+    socket.on('vote-poll', ({ roomId, pollId, optionId }) => {
+      const room = rooms.get(roomId);
+      if (!room) return;
+
+      // Broadcast voto para toda a sala
+      io.to(roomId).emit('poll-vote', {
+        pollId,
+        optionId,
+        userId: socket.id,
+      });
+
+      console.log(`🗳️  Vote in poll ${pollId}: option ${optionId} by ${socket.id}`);
     });
 
     /**

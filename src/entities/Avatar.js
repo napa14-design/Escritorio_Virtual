@@ -92,6 +92,13 @@ export class Avatar extends Phaser.GameObjects.Container {
     this.add(this.statusIndicator);
     this.currentStatusColor = 0x10b981; // Verde por padrão (disponível)
 
+    // Círculo de proximidade (mostra range de voz)
+    this.proximityCircle = this.scene.add.graphics();
+    this.proximityCircle.setVisible(false);
+    this.proximityCircle.setDepth(-1); // Atrás de tudo
+    this.add(this.proximityCircle);
+    this.drawProximityCircle();
+
     // Texto de emote (bolha de emote)
     this.emoteText = this.scene.add.text(0, -55, '', {
       fontSize: '32px',
@@ -200,6 +207,48 @@ export class Avatar extends Phaser.GameObjects.Container {
         },
       });
     }, duration);
+  }
+
+  /**
+   * Desenha círculo de proximidade
+   */
+  drawProximityCircle(radius = 100, color = 0x3b82f6, alpha = 0.2) {
+    this.proximityCircle.clear();
+    this.proximityCircle.lineStyle(2, color, 0.5);
+    this.proximityCircle.fillStyle(color, alpha);
+    this.proximityCircle.fillCircle(0, 0, radius);
+    this.proximityCircle.strokeCircle(0, 0, radius);
+  }
+
+  /**
+   * Mostra círculo de proximidade
+   */
+  showProximityCircle(radius = 100) {
+    this.drawProximityCircle(radius);
+    this.proximityCircle.setVisible(true);
+  }
+
+  /**
+   * Esconde círculo de proximidade
+   */
+  hideProximityCircle() {
+    this.proximityCircle.setVisible(false);
+  }
+
+  /**
+   * Define opacidade do avatar baseado na distância
+   */
+  setDistanceOpacity(distance, maxDistance) {
+    // Opacidade varia de 1.0 (perto) a 0.3 (longe)
+    const opacity = Math.max(0.3, 1 - (distance / maxDistance) * 0.7);
+    this.setAlpha(opacity);
+  }
+
+  /**
+   * Reseta opacidade
+   */
+  resetOpacity() {
+    this.setAlpha(1.0);
   }
 
   /**

@@ -20,6 +20,11 @@ export class NetworkManager {
       onUserEmote: null,
       onWebRTCSignal: null,
       onWhiteboardAction: null,
+      onKnock: null,
+      onPrivateMessage: null,
+      onReaction: null,
+      onPollCreated: null,
+      onPollVote: null,
       onConnected: null,
       onDisconnected: null,
     };
@@ -134,6 +139,41 @@ export class NetworkManager {
       }
     });
 
+    // Knock recebido
+    this.socket.on('knock-received', ({ fromUserId, fromUserName }) => {
+      if (this.callbacks.onKnock) {
+        this.callbacks.onKnock(fromUserId, fromUserName);
+      }
+    });
+
+    // Mensagem privada recebida
+    this.socket.on('private-message', ({ fromUserId, fromUserName, message }) => {
+      if (this.callbacks.onPrivateMessage) {
+        this.callbacks.onPrivateMessage(fromUserId, fromUserName, message);
+      }
+    });
+
+    // Reação recebida
+    this.socket.on('user-reaction', ({ userId, reaction }) => {
+      if (this.callbacks.onReaction) {
+        this.callbacks.onReaction(userId, reaction);
+      }
+    });
+
+    // Poll criada
+    this.socket.on('poll-created', (poll) => {
+      if (this.callbacks.onPollCreated) {
+        this.callbacks.onPollCreated(poll);
+      }
+    });
+
+    // Voto em poll recebido
+    this.socket.on('poll-vote', ({ pollId, optionId, userId }) => {
+      if (this.callbacks.onPollVote) {
+        this.callbacks.onPollVote(pollId, optionId, userId);
+      }
+    });
+
     // Estado da sala
     this.socket.on('room-state', (roomState) => {
       console.log('Room state:', roomState);
@@ -238,6 +278,18 @@ export class NetworkManager {
   }
 
   /**
+   * Envia atualização de mensagem de status
+   */
+  updateStatusMessage(statusMessage) {
+    if (!this.socket || !this.connected) return;
+
+    this.socket.emit('update-status-message', {
+      roomId: this.roomId,
+      statusMessage,
+    });
+  }
+
+  /**
    * Envia emote
    */
   sendEmote(emote) {
@@ -262,6 +314,31 @@ export class NetworkManager {
   }
 
   /**
+   * Envia knock/poke para um usuário
+   */
+  sendKnock(targetUserId) {
+    if (!this.socket || !this.connected) return;
+
+    this.socket.emit('send-knock', {
+      roomId: this.roomId,
+      targetUserId,
+    });
+  }
+
+  /**
+   * Envia mensagem privada para um usuário
+   */
+  sendPrivateMessage(targetUserId, message) {
+    if (!this.socket || !this.connected) return;
+
+    this.socket.emit('send-private-message', {
+      roomId: this.roomId,
+      targetUserId,
+      message,
+    });
+  }
+
+  /**
    * Envia mensagem de chat
    */
   sendChatMessage(message) {
@@ -271,6 +348,43 @@ export class NetworkManager {
       roomId: this.roomId,
       message,
       timestamp: Date.now(),
+    });
+  }
+
+  /**
+   * Envia reação para a sala
+   */
+  sendReaction(reaction) {
+    if (!this.socket || !this.connected) return;
+
+    this.socket.emit('send-reaction', {
+      roomId: this.roomId,
+      reaction,
+    });
+  }
+
+  /**
+   * Cria nova poll
+   */
+  createPoll(poll) {
+    if (!this.socket || !this.connected) return;
+
+    this.socket.emit('create-poll', {
+      roomId: this.roomId,
+      poll,
+    });
+  }
+
+  /**
+   * Envia voto em poll
+   */
+  votePoll(pollId, optionId) {
+    if (!this.socket || !this.connected) return;
+
+    this.socket.emit('vote-poll', {
+      roomId: this.roomId,
+      pollId,
+      optionId,
     });
   }
 
@@ -294,6 +408,93 @@ export class NetworkManager {
     if (this.callbacks.hasOwnProperty(`on${event.charAt(0).toUpperCase()}${event.slice(1)}`)) {
       this.callbacks[`on${event.charAt(0).toUpperCase()}${event.slice(1)}`] = callback;
     }
+  }
+
+  /**
+   * Obtém lista de salas disponíveis
+   */
+  getRooms() {
+    return new Promise((resolve) => {
+      if (!this.socket || !this.connected) {
+        resolve([]);
+        return;
+      }
+
+      this.socket.emit('get-rooms');
+
+      const handler = (rooms) => {
+        this.socket.off('rooms-list', handler);
+        resolve(rooms);
+      };
+
+      this.socket.on('rooms-list', handler);
+    });
+  }
+
+  /**
+   * Cria nova sala
+   */
+  createRoom(roomData) {
+    return new Promise((resolve, reject) => {
+      if (!this.socket || !this.connected) {
+        reject(new Error('Not connected'));
+        return;
+      }
+
+      this.socket.emit('create-room', { roomData });
+
+      const successHandler = (data) => {
+        this.socket.off('room-create-success', successHandler);
+        resolve(data.roomId);
+      };
+
+      this.socket.on('room-create-success', successHandler);
+    });
+  }
+
+  /**
+   * Troca de sala
+   */
+  switchRoom(newRoomId, password = null) {
+    return new Promise((resolve, reject) => {
+      if (!this.socket || !this.connected) {
+        reject(new Error('Not connected'));
+        return;
+      }
+
+      // Se tem senha, validar primeiro
+      if (password) {
+        this.socket.emit('join-room-with-password', {
+          roomId: newRoomId,
+          password,
+          userData: {},
+        }, (response) => {
+          if (!response.success) {
+            reject(new Error(response.error));
+            return;
+          }
+
+          // Senha válida, trocar de sala
+          this.leaveRoom();
+          this.roomId = newRoomId;
+          this.joinRoom(newRoomId, {});
+          resolve();
+        });
+      } else {
+        // Sala pública, trocar direto
+        this.leaveRoom();
+        this.roomId = newRoomId;
+        this.joinRoom(newRoomId, {});
+        resolve();
+      }
+    });
+  }
+
+  /**
+   * Retorna ID da sala atual
+   */
+  getCurrentRoomId() {
+    return this.roomId;
   }
 
   /**
