@@ -7,6 +7,7 @@ import IsometricObject from '../entities/IsometricObject';
 import { getObjectById } from '../config/objectsLibrary';
 import { DEFAULT_AUDIO_ZONES } from '../config/audioZones';
 import { SharedScreenManager } from '../systems/SharedScreenManager';
+import { DEFAULT_AVATAR_CUSTOMIZATION } from '../utils/avatarStorage';
 
 /**
  * Cena principal do escritório virtual isométrico
@@ -20,7 +21,7 @@ export class MainScene extends Phaser.Scene {
     // Dados iniciais
     this.playerName = data.playerName || 'Player';
     this.roomData = data.roomData || null;
-    this.avatarCustomization = data.avatarCustomization || null;
+    this.avatarCustomization = data.avatarCustomization || DEFAULT_AVATAR_CUSTOMIZATION;
   }
 
   create() {

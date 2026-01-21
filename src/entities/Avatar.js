@@ -13,12 +13,15 @@ export class Avatar extends Phaser.GameObjects.Container {
     this.gridX = gridX;
     this.gridY = gridY;
 
+    // Garantir que customization não seja null
+    const custom = customization || {};
+
     // Customização
     this.customization = {
-      skinColor: customization.skinColor || AVATAR_CONFIG.COLORS.SKIN[0],
-      hairColor: customization.hairColor || AVATAR_CONFIG.COLORS.HAIR[0],
-      shirtColor: customization.shirtColor || AVATAR_CONFIG.COLORS.SHIRT[0],
-      pantsColor: customization.pantsColor || AVATAR_CONFIG.COLORS.PANTS[0],
+      skinColor: custom.skinColor || AVATAR_CONFIG.COLORS.SKIN[0],
+      hairColor: custom.hairColor || AVATAR_CONFIG.COLORS.HAIR[0],
+      shirtColor: custom.shirtColor || AVATAR_CONFIG.COLORS.SHIRT[0],
+      pantsColor: custom.pantsColor || AVATAR_CONFIG.COLORS.PANTS[0],
     };
 
     // Estado
