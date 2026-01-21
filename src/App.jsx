@@ -37,19 +37,33 @@ function App() {
     const game = new Phaser.Game(config);
     phaserGameRef.current = game;
 
-    // Aguardar cena estar pronta
-    game.scene.scenes[0].events.on('scene-ready', () => {
-      setGameReady(true);
-    });
+    // Aguardar cena estar pronta (usar setTimeout para esperar a cena ser criada)
+    const setupSceneListeners = () => {
+      const scene = game.scene.scenes[0];
 
-    // Escutar eventos da cena
-    game.scene.scenes[0].events.on('edit-mode-changed', (mode) => {
-      setEditMode(mode);
-    });
+      if (!scene) {
+        // Se cena ainda não existe, tentar novamente
+        setTimeout(setupSceneListeners, 100);
+        return;
+      }
 
-    game.scene.scenes[0].events.on('object-selected', (object) => {
-      setSelectedObject(object);
-    });
+      // Escutar evento de cena pronta
+      scene.events.on('scene-ready', () => {
+        setGameReady(true);
+      });
+
+      // Escutar eventos da cena
+      scene.events.on('edit-mode-changed', (mode) => {
+        setEditMode(mode);
+      });
+
+      scene.events.on('object-selected', (object) => {
+        setSelectedObject(object);
+      });
+    };
+
+    // Iniciar setup dos listeners
+    setupSceneListeners();
 
     // Escutar mudanças de posição do jogador
     const positionUpdateInterval = setInterval(() => {
